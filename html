@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASCII World Enhanced</title>
+<style>
+  html, body {
+    margin: 0;
+    background: #020204;
+    overflow: hidden;
+    height: 100%;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: monospace;
+    user-select: none;
+  }
+  canvas {
+    background: #000;
+    box-shadow: 0 0 25px rgba(0,0,0,0.9);
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #ui {
+    position: absolute;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    left: 10px;
+    color: #55ff77;
+    font-size: 11px;
+    pointer-events: none;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  WASD: mover | Mouse / Flechas: mirar | Click: capturar mouse<br>
+  R: lluvia | T: avanzar hora | sombras dinamicas, refraccion de agua y castillo
+</div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const COLS = 130;
+const ROWS = 65;
+const CHAR_W = 7;
+const CHAR_H = 11;
+
+canvas.width = COLS * CHAR_W;
+canvas.height = ROWS * CHAR_H;
+
+const RAMP = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+
+let camX = 0, camY = 3.5, camZ = 0;
+let yaw = 0, pitch = 0;
+let keys = {};
+let isRaining = false;
+let timeOfDay = 0.22;
+
+window.addEventListener('keydown', e => {
+  let k = e.key.toLowerCase();
+  keys[k] = true;
+  if (k === 'r') isRaining = !isRaining;
+  if (k === 't') timeOfDay = (timeOfDay + 0.15) % 1.0;
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+canvas.addEventListener('click', () => { canvas.requestPointerLock(); });
+window.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === canvas) {
+    yaw += e.movementX * 0.003;
+    pitch -= e.movementY * 0.003;
+    pitch = Math.max(-1.4, Math.min(1.4, pitch));
+  }
+});
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(1337);
+
+function terrainHeight(x, z) {
+  let river = Math.sin(z * 0.08) * 6.0;
+  let distToRiver = Math.abs(x - river);
+  let riverCarve = Math.min(2.5, Math.max(0.0, 3.5 - distToRiver * 0.7));
+
+  let h = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 4.0;
+  h += Math.sin(x * 0.2 + z * 0.15) * 1.5;
+  h += Math.sin(x * 0.4 - z * 0.3) * 0.4;
+  return h - riverCarve;
+}
+
+function castleBoxDist(x, y, z) {
+  let cz = z - 28.0;
+  let cx = x;
+  if (Math.abs(cz) > 12 || Math.abs(cx) > 16) return 999;
+
+  let isTower = (Math.abs(Math.abs(cx) - 10) < 2.0) && (Math.abs(Math.abs(cz) - 6) < 2.0);
+  if (isTower) {
+    let th = terrainHeight(cx, z);
+    if (y >= th && y <= th + 6.0) return 0.1;
+  }
+
+  let isWallX = Math.abs(Math.abs(cz) - 6) < 1.0 && Math.abs(cx) <= 10;
+  let isWallZ = Math.abs(Math.abs(cx) - 10) < 1.0 && Math.abs(cz) <= 6;
+  if (isWallX || isWallZ) {
+    if (Math.abs(cz - 6) < 1.0 && Math.abs(cx) < 2.2 && y < terrainHeight(cx, z) + 2.8) {
+      return 999;
+    }
+    let th = terrainHeight(cx, z);
+    if (y >= th && y <= th + 4.2) return 0.1;
+  }
+  return 999;
+}
+
+let mobs = [
+  { x: 3, z: 8, vx: 0.02, vz: 0.01, size: 0.7, type: 'slime', timer: 0 },
+  { x: -5, z: 12, vx: -0.01, vz: 0.02, size: 0.8, type: 'golem', timer: 0 },
+  { x: 8, z: 15, vx: 0.015, vz: -0.02, size: 0.6, type: 'slime', timer: 0 },
+  { x: -2, z: 20, vx: -0.01, vz: -0.01, size: 0.9, type: 'golem', timer: 0 }
+];
+
+let staticProps = [];
+for (let i = 0; i < 40; i++) {
+  let x = (rand() - 0.5) * 60;
+  let z = (rand() - 0.5) * 60;
+  let th = terrainHeight(x, z);
+  if (th < 0.8 || (z > 14 && z < 42 && Math.abs(x) < 20)) continue;
+  let trunkH = 1.3 + rand() * 0.8;
+  let canopyR = 0.9 + rand() * 0.6;
+  staticProps.push({ type: 'trunk', x, z, y: th + trunkH * 0.5, size: 0.25 });
+  staticProps.push({ type: 'canopy', x, z, y: th + trunkH + canopyR * 0.55, size: canopyR });
+}
+
+let birds = [];
+for (let i = 0; i < 6; i++) {
+  birds.push({
+    cx: (rand() - 0.5) * 20,
+    cz: (rand() - 0.5) * 20,
+    radius: 4 + rand() * 6,
+    height: 7 + rand() * 4,
+    angle: rand() * Math.PI * 2,
+    speed: 0.01 + rand() * 0.02,
+    size: 0.35,
+    type: 'bird'
+  });
+}
+
+let sceneObjects = [];
+
+function updateMobs() {
+  for (let m of mobs) {
+    m.timer += 0.05;
+    m.x += m.vx;
+    m.z += m.vz;
+    if (Math.abs(m.x) > 25) m.vx *= -1;
+    if (Math.abs(m.z) > 25) m.vz *= -1;
+    let baseH = Math.max(0.0, terrainHeight(m.x, m.z));
+    let hop = m.type === 'slime' ? Math.abs(Math.sin(m.timer * 2)) * 0.5 : 0;
+    m.y = baseH + m.size * 0.5 + hop;
+  }
+  for (let b of birds) {
+    b.angle += b.speed;
+    b.x = b.cx + Math.cos(b.angle) * b.radius;
+    b.z = b.cz + Math.sin(b.angle) * b.radius;
+    b.y = b.height + Math.sin(b.angle * 3) * 0.5;
+  }
+  sceneObjects = mobs.concat(staticProps, birds);
+}
+
+function intersectSpheres(ox, oy, oz, rx, ry, rz, maxD) {
+  let hitDist = maxD;
+  let objHit = null;
+  for (let m of sceneObjects) {
+    let ocx = ox - m.x;
+    let ocy = oy - m.y;
+    let ocz = oz - m.z;
+    let b = ocx * rx + ocy * ry + ocz * rz;
+    let c = ocx * ocx + ocy * ocy + ocz * ocz - (m.size * m.size);
+    let disc = b * b - c;
+    if (disc > 0) {
+      let d = -b - Math.sqrt(disc);
+      if (d > 0.15 && d < hitDist) {
+        hitDist = d;
+        objHit = m;
+      }
+    }
+  }
+  return { dist: hitDist, mob: objHit };
+}
+
+function propAppearance(type) {
+  switch (type) {
+    case 'slime': return { color: { r: 50, g: 240, b: 100 }, ch: 'o', b: 0.85 };
+    case 'golem': return { color: { r: 210, g: 130, b: 50 }, ch: '#', b: 0.85 };
+    case 'trunk': return { color: { r: 120, g: 80, b: 40 }, ch: '|', b: 0.5 };
+    case 'canopy': return { color: { r: 35, g: 155, b: 55 }, ch: '&', b: 0.7 };
+    case 'bird': return { color: { r: 30, g: 30, b: 35 }, ch: 'v', b: 0.4 };
+    default: return { color: { r: 200, g: 200, b: 200 }, ch: '?', b: 0.6 };
+  }
+}
+
+function getSunDir() {
+  let ang = timeOfDay * Math.PI * 2 - Math.PI * 0.5;
+  let sx = Math.cos(ang) * 0.8;
+  let sy = Math.sin(ang);
+  let sz = -0.4;
+  let len = Math.hypot(sx, sy, sz);
+  return { x: sx / len, y: sy / len, z: sz / len };
+}
+
+function traceShadow(ox, oy, oz, sun) {
+  if (sun.y <= 0.05) return 0.25;
+  let st = 0.5;
+  let shadowStep = 0.8;
+  while (st < 18.0) {
+    let spx = ox + sun.x * st;
+    let spy = oy + sun.y * st;
+    let spz = oz + sun.z * st;
+    if (spy < terrainHeight(spx, spz) || castleBoxDist(spx, spy, spz) < 0.5) {
+      return 0.3;
+    }
+    st += shadowStep;
+  }
+  return 1.0;
+}
+
+function getSceneColor(rx, ry, rz, ox, oy, oz, tNow) {
+  let sun = getSunDir();
+  let maxDist = 48;
+  let step = 0.38;
+  let hit = false;
+  let hitWater = false;
+  let t = 0.5;
+
+  let rColor = { r: 120, g: 170, b: 240 };
+  let brightness = 0.2;
+  let customChar = null;
+
+  let propHit = intersectSpheres(ox, oy, oz, rx, ry, rz, maxDist);
+
+  while (t < maxDist) {
+    if (propHit.mob && t >= propHit.dist) {
+      let ap = propAppearance(propHit.mob.type);
+      rColor = ap.color;
+      customChar = ap.ch;
+      brightness = ap.b * (1.0 - propHit.dist / maxDist * 0.4);
+      hit = true;
+      break;
+    }
+
+    let px = ox + rx * t;
+    let py = oy + ry * t;
+    let pz = oz + rz * t;
+
+    // Castillo / murallas
+    if (castleBoxDist(px, py, pz) < 0.2) {
+      let shadow = traceShadow(px, py + 0.1, pz, sun);
+      rColor = { r: 175, g: 180, b: 190 };
+      brightness = (0.35 + 0.55 * Math.max(0, sun.y) * shadow) * (1.0 - t / maxDist * 0.4);
+      customChar = '#';
+      hit = true;
+      break;
+    }
+
+    // Agua con reflejo y refraccion
+    if (!hitWater && py <= 0.0) {
+      hitWater = true;
+      let distToWater = -oy / ry;
+      if (distToWater > 0 && distToWater < maxDist && (!propHit.mob || distToWater < propHit.dist)) {
+        px = ox + rx * distToWater;
+        pz = oz + rz * distToWater;
+        py = 0.0;
+        t = distToWater;
+
+        let fresnel = Math.pow(1.0 - Math.abs(ry), 2.5);
+
+        // Si mira empinado hacia abajo, refracta hacia el fondo del rio
+        if (fresnel < 0.45) {
+          let bedDepth = 1.6;
+          let bedH = terrainHeight(px, pz);
+          let bedDist = Math.abs(bedH);
+          let bedShadow = traceShadow(px, bedH + 0.1, pz, sun);
+          rColor = { r: 50, g: 75, b: 85 };
+          brightness = (0.2 + 0.4 * bedShadow) * (1.0 - (bedDist / bedDepth) * 0.4);
+          customChar = '~';
+          hit = true;
+          break;
+        }
+
+        // Rayo rebotado hacia arriba (reflejo)
+        let ripple = Math.sin(px * 2.2 + tNow * 0.003) * 0.04 + Math.cos(pz * 2.2 + tNow * 0.002) * 0.04;
+        ry = -ry + ripple;
+        let len = Math.hypot(rx, ry, rz);
+        rx /= len; ry /= len; rz /= len;
+        ox = px; oy = 0.02; oz = pz;
+        t = 0.5;
+        propHit = intersectSpheres(ox, oy, oz, rx, ry, rz, maxDist);
+        continue;
+      }
+    }
+
+    let th = terrainHeight(px, pz);
+    if (py < th) {
+      hit = true;
+      let eps = 0.1;
+      let dx = terrainHeight(px + eps, pz) - terrainHeight(px - eps, pz);
+      let dz = terrainHeight(px, pz + eps) - terrainHeight(px, pz - eps);
+      let nx = -dx, ny = 2 * eps, nz = -dz;
+      let nlen = Math.hypot(nx, ny, nz);
+      nx /= nlen; ny /= nlen; nz /= nlen;
+
+      let dot = Math.max(0.05, nx * sun.x + ny * sun.y + nz * sun.z);
+      let shadow = traceShadow(px, py + 0.1, pz, sun);
+      let lit = (dot * shadow) * Math.max(0.1, sun.y);
+
+      if (th < 0.3) {
+        rColor = { r: 195, g: 180, b: 125 };
+      } else if (th > 3.8) {
+        rColor = { r: 215, g: 220, b: 230 }; // nieve en cumbres
+      } else {
+        rColor = { r: Math.floor(30 + lit * 70), g: Math.floor(100 + lit * 110), b: Math.floor(35 + lit * 45) };
+      }
+
+      if (hitWater) {
+        rColor.r = Math.floor(rColor.r * 0.4);
+        rColor.g = Math.floor(rColor.g * 0.6);
+        rColor.b = Math.floor(rColor.b * 0.85 + 35);
+      }
+
+      brightness = (0.25 + lit * 0.75) * (1.0 - t / maxDist);
+      break;
+    }
+    t += step;
+  }
+
+  if (!hit) {
+    let sunDot = rx * sun.x + ry * sun.y + rz * sun.z;
+    if (sunDot > 0.985 && sun.y > -0.05) {
+      rColor = { r: 255, g: 245, b: 180 };
+      brightness = 1.0;
+      customChar = 'O';
+    } else {
+      let cloudT = tNow * 0.0003;
+      let cX = rx * 3.5 + cloudT;
+      let cZ = rz * 3.5;
+      let cloudVal = Math.sin(cX * 2.0) * Math.cos(cZ * 2.0) + Math.sin(cX * 4.5 + cZ * 3.0) * 0.5;
+
+      if (ry > 0.15 && cloudVal > 0.35) {
+        let puff = Math.min(1.0, (cloudVal - 0.35) * 2.5);
+        let dayLight = Math.max(0.2, sun.y);
+        let shade = isRaining ? 110 : Math.floor(230 * dayLight);
+        rColor = { r: Math.floor(shade * puff), g: Math.floor(shade * puff), b: Math.floor((shade + 15) * puff) };
+        brightness = isRaining ? 0.45 : (0.4 + dayLight * 0.5);
+        customChar = cloudVal > 0.8 ? '@' : (cloudVal > 0.5 ? '%' : '*');
+      } else {
+        let skyFade = Math.max(0, Math.min(1, ry + 0.3));
+        let dayFactor = Math.max(0.05, Math.min(1.0, sun.y + 0.2));
+        let skyR = isRaining ? 60 : Math.floor(110 * dayFactor);
+        let skyG = isRaining ? 80 : Math.floor(165 * dayFactor);
+        let skyB = isRaining ? 110 : Math.floor(245 * dayFactor);
+
+        rColor = {
+          r: Math.floor(skyR * skyFade),
+          g: Math.floor(skyG * skyFade),
+          b: Math.floor(skyB * skyFade)
+        };
+        brightness = 0.2 + skyFade * 0.6 * dayFactor;
+
+        if (sun.y < 0.1 && ry > 0.2) {
+          let starHash = Math.sin(rx * 5312.3 + rz * 7841.9) * 43758.5453;
+          starHash -= Math.floor(starHash);
+          if (starHash > 0.995) {
+            rColor = { r: 235, g: 235, b: 210 };
+            brightness = 0.9;
+            customChar = '.';
+          }
+        }
+      }
+    }
+  }
+
+  return { color: rColor, b: Math.max(0, Math.min(1, brightness)), ch: customChar };
+}
+
+function update() {
+  let speed = 0.16;
+  let dx = Math.sin(yaw) * speed;
+  let dz = Math.cos(yaw) * speed;
+
+  if (keys['w']) { camX += dx; camZ += dz; }
+  if (keys['s']) { camX -= dx; camZ -= dz; }
+  if (keys['a']) { camX -= dz; camZ += dx; }
+  if (keys['d']) { camX += dz; camZ -= dx; }
+  if (keys['arrowleft']) yaw -= 0.04;
+  if (keys['arrowright']) yaw += 0.04;
+  if (keys['arrowup']) pitch = Math.min(1.4, pitch + 0.03);
+  if (keys['arrowdown']) pitch = Math.max(-1.4, pitch - 0.03);
+
+  let floorY = terrainHeight(camX, camZ);
+  let targetY = Math.max(0.5, floorY) + 2.0;
+  camY += (targetY - camY) * 0.12;
+
+  updateMobs();
+}
+
+function render(tNow) {
+  ctx.fillStyle = '#020408';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = '10px monospace';
+  ctx.textBaseline = 'top';
+
+  let forwardX = Math.sin(yaw) * Math.cos(pitch);
+  let forwardY = Math.sin(pitch);
+  let forwardZ = Math.cos(yaw) * Math.cos(pitch);
+
+  let rightX = Math.cos(yaw);
+  let rightY = 0;
+  let rightZ = -Math.sin(yaw);
+
+  let upX = rightY * forwardZ - rightZ * forwardY;
+  let upY = rightZ * forwardX - rightX * forwardZ;
+  let upZ = rightX * forwardY - rightY * forwardX;
+
+  let fov = 1.0;
+  let rainShift = (tNow * 0.02) % ROWS;
+
+  for (let y = 0; y < ROWS; y++) {
+    let py = (y / ROWS - 0.5) * 2;
+    for (let x = 0; x < COLS; x++) {
+      let isRainStreak = false;
+      if (isRaining) {
+        let rxHash = (x * 37 + 13) % 43;
+        let ryHash = Math.floor((y + rainShift) % ROWS);
+        if (rxHash === 7 && ryHash % 6 === 0) {
+          isRainStreak = true;
+        }
+      }
+
+      if (isRainStreak) {
+        ctx.fillStyle = 'rgba(160, 200, 255, 0.7)';
+        ctx.fillText('|', x * CHAR_W, y * CHAR_H);
+        continue;
+      }
+
+      let px = (x / COLS - 0.5) * 2 * (COLS / ROWS) * 0.55;
+
+      let rx = forwardX * fov + rightX * px - upX * py;
+      let ry = forwardY * fov + rightY * px - upY * py;
+      let rz = forwardZ * fov + rightZ * px - upZ * py;
+      let len = Math.hypot(rx, ry, rz);
+      rx /= len; ry /= len; rz /= len;
+
+      let res = getSceneColor(rx, ry, rz, camX, camY, camZ, tNow);
+      let ch = res.ch;
+      if (!ch) {
+        let charIdx = Math.floor(res.b * (RAMP.length - 1));
+        ch = RAMP[charIdx] || ' ';
+      }
+
+      ctx.fillStyle = `rgb(${res.color.r}, ${res.color.g}, ${res.color.b})`;
+      ctx.fillText(ch, x * CHAR_W, y * CHAR_H);
+    }
+  }
+}
+
+function loop(time) {
+  update();
+  render(time || 0);
+  requestAnimationFrame(loop);
+}
+loop(0);
+</script>
+</body>
+</html>
