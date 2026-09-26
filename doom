@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOOM: E1M1 HANGAR - RESOLUCION NATIVA 1920x1080</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body, html {
+    width: 100%; height: 100%;
+    background-color: #030303;
+    overflow: hidden;
+    display: flex; justify-content: center; align-items: center;
+    font-family: monospace;
+    user-select: none;
+  }
+  #game-container {
+    position: relative;
+    width: 100vw; height: 56.25vw;
+    max-height: 100vh; max-width: 177.78vh;
+    box-shadow: 0 0 80px rgba(0,0,0,1);
+    background: #000;
+  }
+  canvas {
+    width: 100%; height: 100%;
+    display: block;
+    image-rendering: pixelated;
+  }
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10, 6, 4, 0.88);
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    color: #b01c10;
+    text-shadow: 3px 3px 0 #000;
+    z-index: 20;
+    cursor: pointer;
+  }
+  #overlay h1 {
+    font-size: 4.8vw;
+    letter-spacing: 6px;
+    margin-bottom: 12px;
+    color: #c92a18;
+    text-transform: uppercase;
+  }
+  #overlay p {
+    font-size: 1.3vw;
+    color: #cfb17a;
+    line-height: 1.8;
+    text-align: center;
+  }
+  .prompt-click {
+    margin-top: 25px;
+    padding: 14px 34px;
+    background: #7a150c;
+    border: 3px solid #d43b28;
+    color: #fff;
+    font-weight: bold;
+    font-size: 1.4vw;
+  }
+  #damage-flash {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(180, 10, 10, 0.55);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.08s ease-out;
+    z-index: 10;
+  }
+  #item-flash {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(220, 190, 60, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s ease-out;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="view" width="1920" height="1080"></canvas>
+  <div id="damage-flash"></div>
+  <div id="item-flash"></div>
+  <div id="overlay">
+    <h1>DOOM: E1M1 HANGAR</h1>
+    <p>
+      PALETA Y COLORES EXACTOS DE DOOM (1920 x 1080 PIXELES)<br>
+      WASD: MOVERSE | RATON / FLECHAS: GIRAR<br>
+      CLICK / ESPACIO: DISPARAR | E: INTERACTUAR Y PUERTAS<br>
+      1: PISTOLA | 2: ESCOPETA | M: MUSICA ON/OFF
+    </p>
+    <div class="prompt-click">HAZ CLICK PARA JUGAR</div>
+  </div>
+</div>
+
+<script>
+// ==========================================
+// CONSTANTES DE RESOLUCION NATIVA (1920x1080)
+// ==========================================
+const SCREEN_W = 1920;
+const SCREEN_H = 1080;
+const HUD_H = 170;
+const VIEW_H = SCREEN_H - HUD_H;
+const TEX_SIZE = 64;
+
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const damageFlash = document.getElementById('damage-flash');
+const itemFlash = document.getElementById('item-flash');
+
+const imgData = ctx.createImageData(SCREEN_W, SCREEN_H);
+const buf32 = new Uint32Array(imgData.data.buffer);
+const zBuffer = new Float32Array(SCREEN_W);
+
+// ==========================================
+// SINTETIZADOR BANDA SONORA BOBBY PRINCE (E1M1)
+// ==========================================
+let audioCtx = null;
+let musicEnabled = true;
+let nextNoteTime = 0;
+let noteIndex = 0;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    nextNoteTime = audioCtx.currentTime + 0.1;
+  }
+}
+
+function playTone(freq, dur, type='sawtooth', gainVal=0.08, slide=0) {
+  if (!audioCtx) return;
+  try {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    if (slide !== 0) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(10, freq + slide), audioCtx.currentTime + dur);
+    }
+    gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur + 0.02);
+  } catch(e) {}
+}
+
+function playNoise(dur, gainVal=0.15) {
+  if (!audioCtx) return;
+  try {
+    let bufferSize = audioCtx.sampleRate * dur;
+    let buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    let data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    let noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    let filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1400;
+    let gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    noise.start();
+  } catch(e) {}
+}
+
+function sfxPistol() {
+  playNoise(0.12, 0.25);
+  playTone(280, 0.08, 'triangle', 0.16, -130);
+}
+
+function sfxShotgun() {
+  playNoise(0.28, 0.45);
+  playTone(190, 0.18, 'sawtooth', 0.32, -140);
+  setTimeout(() => playTone(620, 0.06, 'sine', 0.09, -320), 300);
+  setTimeout(() => playTone(500, 0.06, 'sine', 0.09, 210), 520);
+}
+
+function sfxMonsterSight() {
+  playTone(145, 0.2, 'sawtooth', 0.2, -40);
+  setTimeout(() => playTone(105, 0.25, 'sawtooth', 0.16, -50), 100);
+}
+
+function sfxMonsterHit() {
+  playNoise(0.12, 0.22);
+  playTone(95, 0.12, 'triangle', 0.22, -30);
+}
+
+function sfxImpDie() {
+  playTone(220, 0.14, 'sawtooth', 0.24, -130);
+  setTimeout(() => playTone(90, 0.3, 'sawtooth', 0.26, -50), 120);
+}
+
+function sfxItem() {
+  playTone(587.33, 0.08, 'triangle', 0.14);
+  setTimeout(() => playTone(880, 0.12, 'triangle', 0.16), 70);
+}
+
+function sfxDoor() {
+  playTone(85, 0.4, 'sawtooth', 0.16, 30);
+  playNoise(0.35, 0.09);
+}
+
+function sfxPlayerOuch() {
+  playTone(115, 0.14, 'sawtooth', 0.22, -45);
+}
+
+const E1M1_NOTES = [
+  82.4, 82.4, 164.8, 82.4, 82.4, 146.8, 82.4, 82.4,
+  130.8, 82.4, 82.4, 116.5, 82.4, 82.4, 123.5, 130.8,
+  82.4, 82.4, 164.8, 82.4, 82.4, 146.8, 82.4, 82.4,
+  130.8, 82.4, 82.4, 155.6, 146.8, 130.8, 116.5, 98.0
+];
+
+function updateMusic() {
+  if (!audioCtx || !musicEnabled) return;
+  let tempo = 0.115;
+  while (nextNoteTime < audioCtx.currentTime + 0.2) {
+    let note = E1M1_NOTES[noteIndex % E1M1_NOTES.length];
+    playTone(note, tempo * 0.85, 'sawtooth', 0.045);
+    playTone(note * 0.5, tempo * 0.85, 'triangle', 0.055);
+    if (noteIndex % 4 === 0) playTone(55, 0.06, 'sine', 0.1, -25);
+    if (noteIndex % 8 === 4) playNoise(0.04, 0.045);
+    nextNoteTime += tempo;
+    noteIndex++;
+  }
+}
+
+// ==========================================
+// PALETA DE COLORES ORIGINAL DE DOOM (PLAYPAL)
+// ==========================================
+// Generador de texturas reproduciendo los pixeles de STARTAN3, COMP2, BROWN1, BIGDOOR2 y NUKAGE
+const textures = [];
+
+function createTexture(generator) {
+  let tex = new Uint32Array(TEX_SIZE * TEX_SIZE);
+  for (let y = 0; y < TEX_SIZE; y++) {
+    for (let x = 0; x < TEX_SIZE; x++) {
+      let [r, g, b] = generator(x, y);
+      tex[y * TEX_SIZE + x] = (255 << 24) | (b << 16) | (g << 8) | r;
+    }
+  }
+  return tex;
+}
+
+// 0: STARTAN3 (Placas de metal marron-arena clasicas con juntas grises y remaches de acero)
+textures.push(createTexture((x, y) => {
+  let seam = (x === 0 || x === 63 || y === 0 || y === 63 || x === 31 || y === 31);
+  if (seam) return [42, 34, 25]; // Ranura de sombra entre paneles
+  let rivet = (x % 32 === 4 || x % 32 === 27) && (y % 32 === 4 || y % 32 === 27);
+  if (rivet) return [175, 170, 160]; // Remache de acero id software
+  let edgeH = (y % 32 === 1 || x % 32 === 1);
+  if (edgeH) return [155, 132, 98]; // Bisel con luz
+  let edgeS = (y % 32 === 30 || x % 32 === 30);
+  if (edgeS) return [80, 62, 44]; // Bisel con sombra
+  let n = ((x * 17 + y * 31) % 19);
+  return [132 + n, 108 + n, 76 + n]; // Tono ocre STARTAN3 original
+}));
+
+// 1: COMP2 (Pared de supercomputadora UAC con pantallas de fosforo verde y terminales oscuras)
+textures.push(createTexture((x, y) => {
+  let frame = (x < 3 || x > 60 || y < 3 || y > 60 || y === 31 || y === 32);
+  if (frame) return [38, 40, 45]; // Metal gris de soporte
+  if (y > 4 && y < 28 && x > 4 && x < 59) {
+    // Monitor de fosforo verde CRT
+    if (y % 3 === 0) return [16, 75, 28]; // Scanlines oscuras
+    let scan = (x * 7 + y * 13) % 17;
+    return [24, 155 + scan * 4, 45]; // Fosforo verde UAC
+  }
+  // Banco de switchs y diodos LED
+  let led = (x % 6 < 3) && (y > 36 && y < 58 && y % 6 < 3);
+  if (led) {
+    if ((x + y) % 5 === 0) return [215, 30, 20]; // Diodo rojo
+    if ((x + y) % 3 === 0) return [45, 125, 215]; // Diodo azul
+    return [225, 185, 30]; // Diodo ambar
+  }
+  let panelNoise = (x * 9 + y * 11) % 11;
+  return [65 + panelNoise, 68 + panelNoise, 74 + panelNoise];
+}));
+
+// 2: BROWN1 (Pared de ladrillo tecnologico color tierra cocida)
+textures.push(createTexture((x, y) => {
+  let row = Math.floor(y / 16);
+  let shift = (row % 2 === 1) ? 16 : 0;
+  let mort = (y % 16 === 0) || ((x + shift) % 32 === 0);
+  if (mort) return [32, 22, 14]; // Cemento oscuro
+  let highlight = (y % 16 === 1);
+  if (highlight) return [145, 96, 62];
+  let n = ((x * 19 + y * 23) % 17);
+  return [118 + n, 76 + n, 46 + n]; // Marron arcilla original
+}));
+
+// 3: BIGDOOR2 (Puerta de hangar de titanio con bandas de precaucion amarillas y negras)
+textures.push(createTexture((x, y) => {
+  let frame = (x < 4 || x > 59 || y < 4 || y > 59);
+  if (frame) return [48, 50, 54]; // Marco metalico gris
+  if (y >= 8 && y <= 18) {
+    // Franja diagonal de advertencia clasica
+    let stripe = Math.floor((x + y) / 6) % 2 === 0;
+    return stripe ? [215, 170, 20] : [24, 24, 26];
+  }
+  let handle = (x >= 28 && x <= 35 && y >= 32 && y <= 42);
+  if (handle) return [180, 28, 20]; // Manivela de apertura de emergencia roja
+  let ribs = (y % 8 === 0);
+  if (ribs) return [42, 44, 48];
+  let n = (x % 16) * 2;
+  return [92 + n, 95 + n, 102 + n]; // Chapa de acero gris id
+}));
+
+// 4: EXITSIGN / SWITCH (Letrero EXIT rojo sangre sobre consola plateada)
+textures.push(createTexture((x, y) => {
+  if (y < 22 && x > 8 && x < 56) {
+    let isRed = (y > 6 && y < 18 && x > 12 && x < 52);
+    return isRed ? [195, 22, 16] : [22, 22, 24]; // Caracteres EXIT
+  }
+  if (y > 30 && y < 50 && x > 24 && x < 40) {
+    return (y > 38) ? [215, 28, 18] : [32, 32, 34]; // Palanca activada
+  }
+  let n = (x * 7 + y * 13) % 13;
+  return [85 + n, 88 + n, 92 + n];
+}));
+
+// 5: TEKGREN (Paneles de aleacion verde militar de la base Phobos)
+textures.push(createTexture((x, y) => {
+  let seam = (x % 16 === 0 || y % 32 === 0);
+  if (seam) return [24, 34, 26];
+  let h = (x % 16 === 1 || y % 32 === 1);
+  if (h) return [84, 115, 88];
+  let n = ((x * 9 + y * 17) % 15);
+  return [56 + n, 84 + n, 60 + n]; // Verde militar caracteristico
+}));
+
+// 6: SLIME WALL / NUKAGE (Pared oxidada con escurrimiento de residuo radioactivo)
+textures.push(createTexture((x, y) => {
+  let slime = (y > 28 + Math.sin(x * 0.35) * 12);
+  if (slime) {
+    let pulse = (x * 5 + y * 9) % 17;
+    return [55 + pulse, 195 + pulse * 2, 35]; // Verde radioactivo autentico
+  }
+  let n = ((x * 11 + y * 19) % 15);
+  return [105 + n, 78 + n, 52 + n]; // Metal oxidado
+}));
+
+// ==========================================
+// MAPA DETALLADO E1M1: HANGAR (28x28)
+// ==========================================
+const MAP_W = 28;
+const MAP_H = 28;
+const MAP = [
+  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,0,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,1,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,1,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,1,1,4,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,2,0,0,0,0,0,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,1,1,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,3,3,3,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,3,0,0,0,0,0,4,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,3,0,3,3,3,3,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,0,0,0,3,1,1,1,1,1,1,0,0,0,0,4,0,0,6,1,1,1,1,1,1,1,1,1,
+  1,1,1,0,3,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,
+  1,1,1,0,0,0,0,0,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,
+  1,1,1,1,1,4,1,0,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,
+  1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,6,6,0,0,0,0,0,1,1,1,1,
+  1,1,1,1,0,6,6,0,6,6,0,6,6,1,1,1,1,1,1,0,7,7,7,0,1,1,1,1,
+  1,1,1,1,0,6,6,0,6,6,0,6,6,1,1,1,1,1,1,0,7,0,7,0,1,1,1,1,
+  1,1,1,1,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,7,0,7,0,4,0,5,1,
+  1,1,1,1,0,6,6,0,6,6,0,6,6,1,1,1,1,1,1,0,7,7,7,0,1,1,1,1,
+  1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,
+  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+];
+
+function isSlimeFloor(x, y) {
+  let mx = Math.floor(x), my = Math.floor(y);
+  return (mx >= 20 && mx <= 22 && my >= 18 && my <= 20);
+}
+
+const doors = [
+  { x: 4, y: 4, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 3, y: 7, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 8, y: 10, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 15, y: 12, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 5, y: 15, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 13, y: 19, open: 0, maxOpen: 1, timer: 0, state: 'closed' },
+  { x: 24, y: 19, open: 0, maxOpen: 1, timer: 0, state: 'closed' }
+];
+
+function getDoor(x, y) {
+  for (let d of doors) if (d.x === x && d.y === y) return d;
+  return null;
+}
+
+// ==========================================
+// ESTADO DEL JUGADOR Y ENTIDADES
+// ==========================================
+let player = {
+  x: 2.5, y: 2.5,
+  dirX: 0.0, dirY: 1.0,
+  planeX: -0.66, planeY: 0.0,
+  hp: 100, armor: 50,
+  ammoShells: 16, ammoBullets: 50,
+  currentWeapon: 2,
+  shootAnim: 0, kills: 0, won: false
+};
+
+const sprites = [
+  // Shotgun guys (Sargentos con armadura verde oliva)
+  { type: 'shotgunner', x: 2.5, y: 5.5, hp: 30, state: 'idle', timer: 0, speed: 0.022 },
+  { type: 'shotgunner', x: 12.5, y: 13.5, hp: 30, state: 'idle', timer: 0, speed: 0.022 },
+  { type: 'shotgunner', x: 25.5, y: 19.5, hp: 30, state: 'idle', timer: 0, speed: 0.022 },
+
+  // Imps (Demonios marrones con puas grises)
+  { type: 'imp', x: 4.5, y: 10.5, hp: 60, state: 'idle', timer: 0, speed: 0.018 },
+  { type: 'imp', x: 8.5, y: 17.5, hp: 60, state: 'idle', timer: 0, speed: 0.018 },
+  { type: 'imp', x: 10.5, y: 19.5, hp: 60, state: 'idle', timer: 0, speed: 0.018 },
+  { type: 'imp', x: 21.5, y: 19.5, hp: 60, state: 'idle', timer: 0, speed: 0.018 },
+
+  // Barriles de residuos radioactivos
+  { type: 'barrel', x: 1.5, y: 6.5, hp: 20 },
+  { type: 'barrel', x: 5.5, y: 17.5, hp: 20 },
+
+  // Suministros
+  { type: 'medikit', x: 4.5, y: 2.5, taken: false },
+  { type: 'armor', x: 3.5, y: 3.5, taken: false },
+  { type: 'shells', x: 1.5, y: 9.5, taken: false },
+  { type: 'shells', x: 7.5, y: 19.5, taken: false }
+];
+
+let projectiles = [];
+const keys = {};
+
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  initAudio();
+  if (e.key === '1') player.currentWeapon = 1;
+  if (e.key === '2') player.currentWeapon = 2;
+  if (e.key.toLowerCase() === 'e') interact();
+  if (e.key.toLowerCase() === 'm') musicEnabled = !musicEnabled;
+  if (e.key === ' ' || e.key.toLowerCase() === 'control') shootWeapon();
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+window.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === canvas) {
+    rotatePlayer(e.movementX * 0.0022);
+  }
+});
+
+canvas.addEventListener('click', () => {
+  if (document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
+  } else {
+    shootWeapon();
+  }
+});
+
+overlay.addEventListener('click', () => {
+  overlay.style.display = 'none';
+  canvas.requestPointerLock();
+  initAudio();
+});
+
+function rotatePlayer(rot) {
+  let oldDirX = player.dirX;
+  player.dirX = player.dirX * Math.cos(rot) - player.dirY * Math.sin(rot);
+  player.dirY = oldDirX * Math.sin(rot) + player.dirY * Math.cos(rot);
+  let oldPlaneX = player.planeX;
+  player.planeX = player.planeX * Math.cos(rot) - player.planeY * Math.sin(rot);
+  player.planeY = oldPlaneX * Math.sin(rot) + player.planeY * Math.cos(rot);
+}
+
+function interact() {
+  let checkX = Math.floor(player.x + player.dirX * 1.3);
+  let checkY = Math.floor(player.y + player.dirY * 1.3);
+  let d = getDoor(checkX, checkY);
+  if (d && d.state === 'closed') {
+    d.state = 'opening';
+    sfxDoor();
+    return;
+  }
+  let tile = MAP[checkY * MAP_W + checkX];
+  if (tile === 5) {
+    sfxItem();
+    player.won = true;
+    setTimeout(() => {
+      alert("¡NIVEL COMPLETADO! SALISTE VIVO DEL HANGAR ( ˃͈◡˂͈)");
+      location.reload();
+    }, 400);
+  }
+}
+
+function shootWeapon() {
+  if (player.shootAnim > 0 || player.hp <= 0 || player.won) return;
+  if (player.currentWeapon === 1) {
+    if (player.ammoBullets <= 0) return;
+    player.ammoBullets--;
+    player.shootAnim = 12;
+    sfxPistol();
+    hitscanFire(1, 18);
+  } else if (player.currentWeapon === 2) {
+    if (player.ammoShells <= 0) return;
+    player.ammoShells--;
+    player.shootAnim = 26;
+    sfxShotgun();
+    hitscanFire(7, 14);
+  }
+}
+
+function hitscanFire(pellets, baseDamage) {
+  for (let p = 0; p < pellets; p++) {
+    let spread = (p === 0) ? 0 : (Math.random() - 0.5) * 0.12;
+    let rayDirX = player.dirX + player.planeX * spread;
+    let rayDirY = player.dirY + player.planeY * spread;
+    let closestEnemy = null;
+    let minDist = 16.0;
+
+    for (let s of sprites) {
+      if ((s.type === 'imp' || s.type === 'shotgunner' || s.type === 'barrel') && s.hp > 0) {
+        let ex = s.x - player.x, ey = s.y - player.y;
+        let dist = Math.hypot(ex, ey);
+        let dot = (ex * rayDirX + ey * rayDirY) / dist;
+        if (dot > 0.96 && dist < minDist) {
+          minDist = dist;
+          closestEnemy = s;
+        }
+      }
+    }
+
+    if (closestEnemy) {
+      closestEnemy.hp -= baseDamage;
+      sfxMonsterHit();
+      if (closestEnemy.hp <= 0) {
+        if (closestEnemy.type === 'imp') { sfxImpDie(); player.kills++; }
+        else if (closestEnemy.type === 'shotgunner') { sfxImpDie(); player.kills++; player.ammoShells += 4; }
+        else if (closestEnemy.type === 'barrel') explodeBarrel(closestEnemy);
+      }
+    }
+  }
+}
+
+function explodeBarrel(barrel) {
+  playNoise(0.4, 0.5);
+  playTone(80, 0.4, 'sawtooth', 0.4, -40);
+  for (let s of sprites) {
+    if (s !== barrel && s.hp > 0) {
+      let d = Math.hypot(s.x - barrel.x, s.y - barrel.y);
+      if (d < 3.2) s.hp -= 90;
+    }
+  }
+  let pDist = Math.hypot(player.x - barrel.x, player.y - barrel.y);
+  if (pDist < 3.5) hurtPlayer(Math.floor((3.5 - pDist) * 25));
+}
+
+function hurtPlayer(dmg) {
+  if (player.armor > 0) {
+    let armLoss = Math.min(player.armor, Math.floor(dmg * 0.6));
+    player.armor -= armLoss;
+    dmg -= armLoss;
+  }
+  player.hp = Math.max(0, player.hp - dmg);
+  sfxPlayerOuch();
+  damageFlash.style.opacity = '0.7';
+  setTimeout(() => damageFlash.style.opacity = '0', 90);
+  if (player.hp <= 0) {
+    setTimeout(() => {
+      alert("HAS CAIDO EN EL HANGAR. REINTENTANDO... (¬_¬)");
+      location.reload();
+    }, 500);
+  }
+}
+
+function update() {
+  updateMusic();
+  if (player.shootAnim > 0) player.shootAnim--;
+
+  let moveSpeed = 0.065;
+  let rotSpeed = 0.04;
+  if (keys['arrowleft']) rotatePlayer(-rotSpeed);
+  if (keys['arrowright']) rotatePlayer(rotSpeed);
+
+  let moveX = 0, moveY = 0;
+  if (keys['w']) { moveX += player.dirX * moveSpeed; moveY += player.dirY * moveSpeed; }
+  if (keys['s']) { moveX -= player.dirX * moveSpeed; moveY -= player.dirY * moveSpeed; }
+  if (keys['a']) { moveX -= player.planeX * moveSpeed; moveY -= player.planeY * moveSpeed; }
+  if (keys['d']) { moveX += player.planeX * moveSpeed; moveY += player.planeY * moveSpeed; }
+
+  let checkRadius = 0.25;
+  let newX = player.x + moveX;
+  let newY = player.y + moveY;
+
+  function canWalk(x, y) {
+    let mx = Math.floor(x), my = Math.floor(y);
+    if (mx < 0 || mx >= MAP_W || my < 0 || my >= MAP_H) return false;
+    let tile = MAP[my * MAP_W + mx];
+    if (tile === 4) {
+      let d = getDoor(mx, my);
+      return d && d.open > 0.7;
+    }
+    return tile === 0;
+  }
+
+  if (canWalk(newX + Math.sign(moveX) * checkRadius, player.y)) player.x = newX;
+  if (canWalk(player.x, newY + Math.sign(moveY) * checkRadius)) player.y = newY;
+
+  if (isSlimeFloor(player.x, player.y) && Math.random() < 0.08) hurtPlayer(2);
+
+  for (let d of doors) {
+    if (d.state === 'opening') {
+      d.open += 0.04;
+      if (d.open >= d.maxOpen) { d.open = d.maxOpen; d.state = 'stay'; d.timer = 140; }
+    } else if (d.state === 'stay') {
+      d.timer--;
+      if (d.timer <= 0) d.state = 'closing';
+    } else if (d.state === 'closing') {
+      d.open -= 0.04;
+      if (d.open <= 0) { d.open = 0; d.state = 'closed'; }
+    }
+  }
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    let p = projectiles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life--;
+    if (!canWalk(p.x, p.y) || p.life <= 0) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+    if (Math.hypot(p.x - player.x, p.y - player.y) < 0.45) {
+      hurtPlayer(18);
+      projectiles.splice(i, 1);
+    }
+  }
+
+  for (let s of sprites) {
+    if (s.taken) continue;
+    let distToPlayer = Math.hypot(s.x - player.x, s.y - player.y);
+    if (distToPlayer < 0.6) {
+      if (s.type === 'medikit' && player.hp < 100) {
+        player.hp = Math.min(100, player.hp + 25);
+        s.taken = true; sfxItem();
+        itemFlash.style.opacity = '0.5'; setTimeout(() => itemFlash.style.opacity = '0', 100);
+      } else if (s.type === 'armor' && player.armor < 100) {
+        player.armor = 100;
+        s.taken = true; sfxItem();
+        itemFlash.style.opacity = '0.5'; setTimeout(() => itemFlash.style.opacity = '0', 100);
+      } else if (s.type === 'shells') {
+        player.ammoShells += 8;
+        s.taken = true; sfxItem();
+        itemFlash.style.opacity = '0.5'; setTimeout(() => itemFlash.style.opacity = '0', 100);
+      }
+    }
+
+    if ((s.type === 'imp' || s.type === 'shotgunner') && s.hp > 0) {
+      s.timer = (s.timer || 0) + 1;
+      let dx = player.x - s.x, dy = player.y - s.y;
+      let dist = Math.hypot(dx, dy);
+
+      if (dist < 11.0) {
+        if (s.state === 'idle') { s.state = 'chase'; sfxMonsterSight(); }
+        if (dist > 2.5) {
+          let stepX = (dx / dist) * s.speed;
+          let stepY = (dy / dist) * s.speed;
+          if (canWalk(s.x + stepX, s.y)) s.x += stepX;
+          if (canWalk(s.x, s.y + stepY)) s.y += stepY;
+        }
+
+        if (s.timer % 80 === 0) {
+          if (s.type === 'imp') {
+            projectiles.push({ x: s.x, y: s.y, vx: (dx / dist) * 0.12, vy: (dy / dist) * 0.12, life: 140 });
+            playTone(320, 0.15, 'sawtooth', 0.2, -180);
+          } else if (s.type === 'shotgunner' && dist < 8.0) {
+            sfxPistol();
+            if (Math.random() < 0.6) hurtPlayer(12);
+          }
+        }
+      }
+    }
+  }
+}
+
+// ==========================================
+// RENDERIZADO EN 1920x1080 (PROYECCION EXACTA)
+// ==========================================
+function render() {
+  let halfH = VIEW_H / 2;
+
+  // Techo y piso originales: FLOOR4_8 y CEIL5_1 con atenuacion por distancia
+  for (let y = 0; y < VIEW_H; y++) {
+    let isFloor = y >= halfH;
+    let rowDist = isFloor ? (VIEW_H / (2.0 * y - VIEW_H)) : (VIEW_H / (VIEW_H - 2.0 * y));
+    let shade = Math.min(1.0, Math.max(0.08, 1.4 / (rowDist * 0.38 + 0.7)));
+
+    // Piso marron tierra quemada (DOOM FLAT14)
+    let rF = Math.floor(58 * shade), gF = Math.floor(46 * shade), bF = Math.floor(34 * shade);
+    // Techo gris plomo oscuro de hangar militar
+    let rC = Math.floor(32 * shade), gC = Math.floor(34 * shade), bC = Math.floor(38 * shade);
+
+    let color32 = isFloor ? ((255 << 24) | (bF << 16) | (gF << 8) | rF)
+                          : ((255 << 24) | (bC << 16) | (gC << 8) | rC);
+
+    let rowOffset = y * SCREEN_W;
+    for (let x = 0; x < SCREEN_W; x++) {
+      buf32[rowOffset + x] = color32;
+    }
+  }
+
+  // Trazado de las 1920 lineas verticales en paralelo
+  for (let x = 0; x < SCREEN_W; x++) {
+    let cameraX = 2 * x / SCREEN_W - 1;
+    let rayDirX = player.dirX + player.planeX * cameraX;
+    let rayDirY = player.dirY + player.planeY * cameraX;
+
+    let mapX = Math.floor(player.x);
+    let mapY = Math.floor(player.y);
+
+    let deltaDistX = Math.abs(1 / rayDirX);
+    let deltaDistY = Math.abs(1 / rayDirY);
+    let perpWallDist = 0;
+
+    let stepX = (rayDirX < 0) ? -1 : 1;
+    let stepY = (rayDirY < 0) ? -1 : 1;
+
+    let sideDistX = (rayDirX < 0) ? (player.x - mapX) * deltaDistX : (mapX + 1.0 - player.x) * deltaDistX;
+    let sideDistY = (rayDirY < 0) ? (player.y - mapY) * deltaDistY : (mapY + 1.0 - player.y) * deltaDistY;
+
+    let hit = 0, side = 0, isDoor = false, doorOffset = 0;
+
+    while (hit === 0) {
+      if (sideDistX < sideDistY) {
+        sideDistX += deltaDistX;
+        mapX += stepX;
+        side = 0;
+      } else {
+        sideDistY += deltaDistY;
+        mapY += stepY;
+        side = 1;
+      }
+
+      let tile = MAP[mapY * MAP_W + mapX];
+      if (tile > 0) {
+        if (tile === 4) {
+          let d = getDoor(mapX, mapY);
+          let dist = (side === 0) ? (mapX - player.x + (1 - stepX) / 2) / rayDirX : (mapY - player.y + (1 - stepY) / 2) / rayDirY;
+          let hitPos = (side === 0) ? player.y + dist * rayDirY : player.x + dist * rayDirX;
+          hitPos -= Math.floor(hitPos);
+
+          if (d && hitPos < (1.0 - d.open)) {
+            doorOffset = d.open;
+            hit = 1; isDoor = true;
+          }
+        } else {
+          hit = 1;
+        }
+      }
+    }
+
+    if (side === 0) perpWallDist = (mapX - player.x + (1 - stepX) / 2) / rayDirX;
+    else            perpWallDist = (mapY - player.y + (1 - stepY) / 2) / rayDirY;
+
+    zBuffer[x] = perpWallDist;
+
+    let lineHeight = Math.floor(VIEW_H / perpWallDist);
+    let drawStart = Math.floor(-lineHeight / 2 + VIEW_H / 2);
+    let drawEnd = Math.floor(lineHeight / 2 + VIEW_H / 2);
+
+    let clampStart = Math.max(0, drawStart);
+    let clampEnd = Math.min(VIEW_H - 1, drawEnd);
+
+    let tile = MAP[mapY * MAP_W + mapX];
+    let texIdx = isDoor ? 3 : (tile - 1);
+    if (texIdx < 0 || texIdx >= textures.length) texIdx = 0;
+    let texture = textures[texIdx];
+
+    let wallX = (side === 0) ? player.y + perpWallDist * rayDirY : player.x + perpWallDist * rayDirX;
+    wallX -= Math.floor(wallX);
+    if (isDoor) wallX += doorOffset;
+
+    let texX = Math.floor(wallX * TEX_SIZE);
+    if (side === 0 && rayDirX > 0) texX = TEX_SIZE - texX - 1;
+    if (side === 1 && rayDirY < 0) texX = TEX_SIZE - texX - 1;
+
+    // Atenuacion de luz segun distancia de la camara
+    let light = Math.min(1.0, Math.max(0.12, 1.9 / (perpWallDist * 0.42 + 0.85)));
+    if (side === 1) light *= 0.72; // Luz sectorial direccional
+
+    let step = TEX_SIZE / lineHeight;
+    let texPos = (clampStart - drawStart) * step;
+
+    for (let y = clampStart; y <= clampEnd; y++) {
+      let texY = Math.floor(texPos) & (TEX_SIZE - 1);
+      texPos += step;
+      let pixel = texture[texY * TEX_SIZE + texX];
+
+      let r = (pixel & 0xFF) * light;
+      let g = ((pixel >> 8) & 0xFF) * light;
+      let b = ((pixel >> 16) & 0xFF) * light;
+
+      buf32[y * SCREEN_W + x] = (255 << 24) | ((b & 0xFF) << 16) | ((g & 0xFF) << 8) | (r & 0xFF);
+    }
+  }
+
+  // Fondo de barra de estado
+  for (let y = VIEW_H; y < SCREEN_H; y++) {
+    let rowOffset = y * SCREEN_W;
+    for (let x = 0; x < SCREEN_W; x++) {
+      buf32[rowOffset + x] = (255 << 24) | (0x2b << 16) | (0x2b << 8) | 0x2b;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  renderSprites();
+  renderWeapon();
+  renderDoomHUD();
+}
+
+function renderSprites() {
+  let allDrawables = [];
+  for (let s of sprites) {
+    if (!s.taken) {
+      allDrawables.push({
+        x: s.x, y: s.y,
+        type: s.type, hp: s.hp,
+        dist: Math.hypot(player.x - s.x, player.y - s.y)
+      });
+    }
+  }
+  for (let p of projectiles) {
+    allDrawables.push({
+      x: p.x, y: p.y,
+      type: 'fireball',
+      dist: Math.hypot(player.x - p.x, player.y - p.y)
+    });
+  }
+
+  allDrawables.sort((a, b) => b.dist - a.dist);
+
+  for (let spr of allDrawables) {
+    let spriteX = spr.x - player.x;
+    let spriteY = spr.y - player.y;
+
+    let invDet = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
+    let transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
+    let transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
+
+    if (transformY <= 0.15) continue;
+
+    let spriteScreenX = Math.floor((SCREEN_W / 2) * (1 + transformX / transformY));
+    let spriteH = Math.abs(Math.floor(VIEW_H / transformY));
+    let spriteW = spriteH;
+
+    let drawStartY = Math.max(0, Math.floor(-spriteH / 2 + VIEW_H / 2));
+    let drawEndY = Math.min(VIEW_H - 1, Math.floor(spriteH / 2 + VIEW_H / 2));
+    let drawStartX = Math.max(0, Math.floor(-spriteW / 2 + spriteScreenX));
+    let drawEndX = Math.min(SCREEN_W - 1, Math.floor(spriteW / 2 + spriteScreenX));
+
+    if (spriteScreenX + spriteW / 2 < 0 || spriteScreenX - spriteW / 2 >= SCREEN_W) continue;
+
+    ctx.save();
+    for (let stripe = drawStartX; stripe < drawEndX; stripe++) {
+      if (transformY < zBuffer[stripe]) {
+        let size = drawEndY - drawStartY;
+        let cx = spriteScreenX;
+        let cy = VIEW_H / 2;
+
+        if (spr.type === 'imp') drawImp(cx, cy, size, spr.hp <= 0);
+        else if (spr.type === 'shotgunner') drawTrooper(cx, cy, size, spr.hp <= 0);
+        else if (spr.type === 'barrel') drawBarrel(cx, cy, size, spr.hp <= 0);
+        else if (spr.type === 'medikit') drawMedikit(cx, cy, size);
+        else if (spr.type === 'armor') drawArmor(cx, cy, size);
+        else if (spr.type === 'shells') drawShells(cx, cy, size);
+        else if (spr.type === 'fireball') drawFireball(cx, cy, size);
+        break;
+      }
+    }
+    ctx.restore();
+  }
+}
+
+// ==========================================
+// SPRITES CON PALETA AUTENTICA DE OBJETOS
+// ==========================================
+
+// IMP: Cuero marron café, espinas grises/hueso, ojos rojos demoniacos
+function drawImp(x, y, h, dead) {
+  let w = h * 0.72;
+  let topY = y - (dead ? 0 : h / 2.5);
+  let totalH = dead ? h / 5 : h / 1.3;
+
+  if (dead) {
+    // Charco de sangre demoniaca
+    ctx.fillStyle = '#6e1108';
+    ctx.fillRect(x - w / 2, topY, w, totalH);
+    ctx.fillStyle = '#420804';
+    ctx.fillRect(x - w * 0.35, topY + totalH * 0.2, w * 0.7, totalH * 0.5);
+    return;
+  }
+
+  // Silueta leathern marrón (#7a4e33 original)
+  ctx.fillStyle = '#7a4e33';
+  ctx.fillRect(x - w * 0.35, topY + totalH * 0.22, w * 0.7, totalH * 0.78);
+  // Cabeza y mandibula
+  ctx.fillStyle = '#8f5c3d';
+  ctx.fillRect(x - w * 0.3, topY, w * 0.6, totalH * 0.3);
+
+  // Espinas/Huesos gris hueso caracteristicas en hombros y cabeza
+  ctx.fillStyle = '#c7bca7';
+  ctx.fillRect(x - w * 0.44, topY + totalH * 0.18, w * 0.14, totalH * 0.12);
+  ctx.fillRect(x + w * 0.3, topY + totalH * 0.18, w * 0.14, totalH * 0.12);
+  ctx.fillRect(x - w * 0.22, topY - totalH * 0.06, w * 0.1, totalH * 0.1);
+  ctx.fillRect(x + w * 0.12, topY - totalH * 0.06, w * 0.1, totalH * 0.1);
+
+  // Ojos rojos DOOM
+  ctx.fillStyle = '#e61d15';
+  ctx.fillRect(x - w * 0.22, topY + totalH * 0.08, w * 0.12, totalH * 0.08);
+  ctx.fillRect(x + w * 0.1, topY + totalH * 0.08, w * 0.12, totalH * 0.08);
+
+  // Mandibula y boca abierta
+  ctx.fillStyle = '#260c07';
+  ctx.fillRect(x - w * 0.16, topY + totalH * 0.2, w * 0.32, totalH * 0.07);
+}
+
+// SHOTGUN GUY: Uniforme verde oliva militar, pantalones caqui, casco, escopeta en ristre
+function drawTrooper(x, y, h, dead) {
+  let w = h * 0.68;
+  let topY = y - (dead ? 0 : h / 2.5);
+  let totalH = dead ? h / 5 : h / 1.3;
+
+  if (dead) {
+    ctx.fillStyle = '#591612';
+    ctx.fillRect(x - w / 2, topY, w, totalH);
+    return;
+  }
+
+  // Pantalones militares marron/oliva
+  ctx.fillStyle = '#544c38';
+  ctx.fillRect(x - w * 0.3, topY + totalH * 0.55, w * 0.6, totalH * 0.45);
+
+  // Torso / Chaleco antibalas verde oliva (#4c613c)
+  ctx.fillStyle = '#4c613c';
+  ctx.fillRect(x - w * 0.35, topY + totalH * 0.24, w * 0.7, totalH * 0.38);
+
+  // Piel palida de zombi (#cfa27c)
+  ctx.fillStyle = '#cfa27c';
+  ctx.fillRect(x - w * 0.22, topY + totalH * 0.05, w * 0.44, totalH * 0.2);
+
+  // Casco militar verde
+  ctx.fillStyle = '#3c4d30';
+  ctx.fillRect(x - w * 0.26, topY, w * 0.52, totalH * 0.1);
+
+  // Escopeta de asalto negra pavonada
+  ctx.fillStyle = '#1e2024';
+  ctx.fillRect(x + w * 0.04, topY + totalH * 0.32, w * 0.44, totalH * 0.09);
+  ctx.fillStyle = '#5a5e66';
+  ctx.fillRect(x + w * 0.08, topY + totalH * 0.33, w * 0.38, totalH * 0.03);
+}
+
+// BARREL (Nukage canister): Barril verde oliva oscuro con liquido radiactivo y simbolo biohazard
+function drawBarrel(x, y, h, dead) {
+  let w = h * 0.56;
+  let topY = y - (dead ? 0 : h / 3);
+  let totalH = dead ? h / 7 : h / 1.5;
+
+  if (dead) {
+    ctx.fillStyle = '#2d5926';
+    ctx.fillRect(x - w / 2, topY, w, totalH);
+    return;
+  }
+
+  // Cuerpo metalico del barril (#3d6632)
+  ctx.fillStyle = '#3d6632';
+  ctx.fillRect(x - w / 2, topY, w, totalH);
+
+  // Bandas metalicas de refuerzo
+  ctx.fillStyle = '#25421e';
+  ctx.fillRect(x - w / 2, topY + totalH * 0.28, w, totalH * 0.06);
+  ctx.fillRect(x - w / 2, topY + totalH * 0.68, w, totalH * 0.06);
+
+  // Tapa con residuo de acido NUKAGE verde brillante
+  ctx.fillStyle = '#4ae827';
+  ctx.fillRect(x - w * 0.42, topY - totalH * 0.04, w * 0.84, totalH * 0.1);
+  ctx.fillStyle = '#99ff7a';
+  ctx.fillRect(x - w * 0.25, topY - totalH * 0.03, w * 0.5, totalH * 0.04);
+
+  // Simbolo de peligro de radiacion negro y amarillo
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(x - w * 0.14, topY + totalH * 0.4, w * 0.28, totalH * 0.18);
+  ctx.fillStyle = '#e8c827';
+  ctx.fillRect(x - w * 0.08, topY + totalH * 0.44, w * 0.16, totalH * 0.1);
+}
+
+// MEDIKIT: Caja medica original id Software (blanco marfil y cruz roja)
+function drawMedikit(x, y, h) {
+  let w = h * 0.5;
+  // Caja rectangular de lona/metal blanco hueso (#ded8cd)
+  ctx.fillStyle = '#ded8cd';
+  ctx.fillRect(x - w / 2, y + h * 0.1, w, h * 0.35);
+  // Asa superior marron
+  ctx.fillStyle = '#5c4532';
+  ctx.fillRect(x - w * 0.2, y + h * 0.06, w * 0.4, h * 0.05);
+  // Cruz roja de auxilio (#bd1c13)
+  ctx.fillStyle = '#bd1c13';
+  ctx.fillRect(x - w * 0.1, y + h * 0.15, w * 0.2, h * 0.25);
+  ctx.fillRect(x - w * 0.32, y + h * 0.22, w * 0.64, h * 0.11);
+}
+
+// ARMOR: Chaleco de combate verde esmeralda reflectante
+function drawArmor(x, y, h) {
+  let w = h * 0.52;
+  ctx.fillStyle = '#1c943d';
+  ctx.fillRect(x - w / 2, y + h * 0.08, w, h * 0.37);
+  ctx.fillStyle = '#42db6d';
+  ctx.fillRect(x - w * 0.26, y + h * 0.14, w * 0.52, h * 0.14);
+  // Hombreras
+  ctx.fillStyle = '#156e2e';
+  ctx.fillRect(x - w * 0.45, y + h * 0.08, w * 0.2, h * 0.12);
+  ctx.fillRect(x + w * 0.25, y + h * 0.08, w * 0.2, h * 0.12);
+}
+
+// SHELLS: Caja de 8 cartuchos de escopeta roja con casquillos dorados de laton
+function drawShells(x, y, h) {
+  let w = h * 0.4;
+  // Carton rojo carmesi (#9e1f18)
+  ctx.fillStyle = '#9e1f18';
+  ctx.fillRect(x - w / 2, y + h * 0.18, w, h * 0.28);
+  // Culotes de laton dorado (#d4ad37)
+  ctx.fillStyle = '#d4ad37';
+  ctx.fillRect(x - w * 0.38, y + h * 0.21, w * 0.76, h * 0.08);
+}
+
+// FIREBALL: Bola de plasma y fuego lanzada por el Imp
+function drawFireball(x, y, h) {
+  let r = h * 0.22;
+  let grad = ctx.createRadialGradient(x, y, 1, x, y, r);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.3, '#ffcc00');
+  grad.addColorStop(0.7, '#e63300');
+  grad.addColorStop(1, 'rgba(100, 10, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ==========================================
+// ARMAS EN PRIMERA PERSONA CON PALETA ORIGINAL
+// ==========================================
+function renderWeapon() {
+  let cx = SCREEN_W / 2;
+  let cy = VIEW_H;
+  let bob = Math.sin(performance.now() * 0.008) * 8;
+
+  if (player.currentWeapon === 1) { // PISTOLA ESTANDAR UAC 9MM
+    let f = player.shootAnim;
+    let kick = (f > 8) ? (f - 8) * 9 : 0;
+
+    // Mano enguantada / piel Doom Marine (#cfa27c)
+    ctx.fillStyle = '#cfa27c';
+    ctx.fillRect(cx - 30, cy - 130 + bob + kick, 60, 140);
+    // Corredera y cañon de acero pavonado (#33353b)
+    ctx.fillStyle = '#33353b';
+    ctx.fillRect(cx - 18, cy - 240 + bob + kick, 36, 120);
+    ctx.fillStyle = '#585b63';
+    ctx.fillRect(cx - 10, cy - 250 + bob + kick, 20, 20);
+
+    // Fogonazo de boca de cañon
+    if (f > 8) {
+      ctx.fillStyle = '#ffe852';
+      ctx.beginPath();
+      ctx.arc(cx, cy - 265 + kick, 45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (player.currentWeapon === 2) { // ESCOPETA CLASICA CORREDERA
+    let f = player.shootAnim;
+    let kick = (f > 22) ? (f - 22) * 12 : 0;
+    let pump = (f > 8 && f <= 18) ? Math.sin((f - 8) * 0.31) * 35 : 0;
+
+    // Manos del Doom Slayer en el guardamanos y culata (#cfa27c)
+    ctx.fillStyle = '#cfa27c';
+    ctx.fillRect(cx - 140, cy - 120 + bob, 80, 130);
+    ctx.fillRect(cx + 80, cy - 140 + bob + kick, 90, 140);
+
+    // Cañon doble de acero gris plomo (#2b2d33)
+    ctx.fillStyle = '#2b2d33';
+    ctx.fillRect(cx - 45, cy - 310 + bob + kick, 90, 260);
+    ctx.fillStyle = '#4c5059';
+    ctx.fillRect(cx - 38, cy - 325 + bob + kick, 34, 30);
+    ctx.fillRect(cx + 4, cy - 325 + bob + kick, 34, 30);
+
+    // Guardamanos de madera de nogal (#6b3c1b)
+    ctx.fillStyle = '#6b3c1b';
+    ctx.fillRect(cx - 48, cy - 180 + bob + kick + pump, 96, 65);
+    ctx.fillStyle = '#9e5927';
+    ctx.fillRect(cx - 42, cy - 176 + bob + kick + pump, 84, 8);
+
+    // Fogonazo iconico
+    if (f > 22) {
+      let fGrad = ctx.createRadialGradient(cx, cy - 340 + kick, 10, cx, cy - 340 + kick, 120);
+      fGrad.addColorStop(0, '#ffffff');
+      fGrad.addColorStop(0.4, '#ffd52b');
+      fGrad.addColorStop(1, 'rgba(215, 35, 10, 0)');
+      ctx.fillStyle = fGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy - 340 + kick, 130, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Punto de mira clasico sutil
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 8, VIEW_H / 2); ctx.lineTo(cx + 8, VIEW_H / 2);
+  ctx.moveTo(cx, VIEW_H / 2 - 8); ctx.lineTo(cx, VIEW_H / 2 + 8);
+  ctx.stroke();
+}
+
+// ==========================================
+// STATUS BAR OFICIAL DE DOOM (STBAR)
+// ==========================================
+function renderDoomHUD() {
+  let hy = VIEW_H;
+
+  // Fondo de roca / piedra gris original (STBAR texture)
+  ctx.fillStyle = '#383838';
+  ctx.fillRect(0, hy, SCREEN_W, HUD_H);
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(0, hy, SCREEN_W, 6);
+
+  ctx.font = 'bold 36px monospace';
+  ctx.textBaseline = 'middle';
+
+  // PANEL AMMO
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(58, hy + 23, 264, 124);
+  ctx.fillStyle = '#6e150a'; // Fondo rojo oscuro de los marcadores id
+  ctx.fillRect(60, hy + 25, 260, 120);
+  ctx.fillStyle = '#bf1e15';
+  ctx.fillText('AMMO', 80, hy + 55);
+  ctx.fillStyle = '#d49b28'; // Digitos LED dorados de Doom
+  let curAmmo = (player.currentWeapon === 2) ? player.ammoShells : player.ammoBullets;
+  ctx.fillText(curAmmo.toString().padStart(3, ' '), 180, hy + 98);
+
+  // PANEL HEALTH
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(358, hy + 23, 304, 124);
+  ctx.fillStyle = '#1a291a';
+  ctx.fillRect(360, hy + 25, 300, 120);
+  ctx.fillStyle = '#bf1e15';
+  ctx.fillText('HEALTH', 380, hy + 55);
+  ctx.fillStyle = '#d49b28';
+  ctx.fillText(`${Math.max(0, player.hp)}%`, 500, hy + 98);
+
+  // DOOMGUY FACE (Retrato animado en el centro del HUD)
+  let faceX = SCREEN_W / 2;
+  let faceY = hy + HUD_H / 2;
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(faceX - 72, hy + 18, 144, 134);
+  ctx.fillStyle = '#262626';
+  ctx.fillRect(faceX - 70, hy + 20, 140, 130);
+  drawDoomGuyFace(faceX, faceY);
+
+  // PANEL ARMOR
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(SCREEN_W - 662, hy + 23, 304, 124);
+  ctx.fillStyle = '#141d2e';
+  ctx.fillRect(SCREEN_W - 660, hy + 25, 300, 120);
+  ctx.fillStyle = '#bf1e15';
+  ctx.fillText('ARMOR', SCREEN_W - 640, hy + 55);
+  ctx.fillStyle = '#d49b28';
+  ctx.fillText(`${player.armor}%`, SCREEN_W - 520, hy + 98);
+
+  // PANEL STATS / LEVEL
+  ctx.fillStyle = '#1c1c1c';
+  ctx.fillRect(SCREEN_W - 322, hy + 23, 264, 124);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(SCREEN_W - 320, hy + 25, 260, 120);
+  ctx.font = 'bold 22px monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`FRAGS: ${player.kills}`, SCREEN_W - 300, hy + 65);
+  ctx.fillStyle = '#bf1e15';
+  ctx.fillText(`LEVEL: E1M1`, SCREEN_W - 300, hy + 105);
+}
+
+// Expresion facial del marine segun salud y disparos (STFST00 / STFST01)
+function drawDoomGuyFace(x, y) {
+  let hp = player.hp;
+  // Tono de piel autentico del Doomguy (#d99f77)
+  ctx.fillStyle = (hp > 0) ? '#d99f77' : '#731a1a';
+  ctx.fillRect(x - 45, y - 48, 90, 96);
+  // Cabello castaño militar (#4a2d18)
+  ctx.fillStyle = '#4a2d18';
+  ctx.fillRect(x - 45, y - 48, 90, 24);
+
+  if (hp > 0) {
+    let look = Math.sin(performance.now() * 0.003) * 6;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x - 28, y - 16, 18, 12);
+    ctx.fillRect(x + 10, y - 16, 18, 12);
+    ctx.fillStyle = '#2244aa';
+    ctx.fillRect(x - 24 + look, y - 14, 10, 8);
+    ctx.fillRect(x + 14 + look, y - 14, 10, 8);
+
+    if (player.shootAnim > 18) {
+      // Mueca malevola al disparar la escopeta
+      ctx.fillStyle = '#551111';
+      ctx.fillRect(x - 22, y + 16, 44, 14);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - 18, y + 18, 36, 4);
+    } else if (hp < 30) {
+      // Rostro ensangrentado
+      ctx.fillStyle = '#990000';
+      ctx.fillRect(x - 25, y - 5, 12, 28);
+      ctx.fillRect(x + 8, y + 10, 8, 20);
+      ctx.fillStyle = '#400';
+      ctx.fillRect(x - 18, y + 20, 36, 12);
+    } else {
+      ctx.fillStyle = '#6e3820';
+      ctx.fillRect(x - 18, y + 20, 36, 6);
+    }
+  } else {
+    // Ojos cruzados de muerte
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 25, y - 15); ctx.lineTo(x - 10, y - 5);
+    ctx.moveTo(x - 10, y - 15); ctx.lineTo(x - 25, y - 5);
+    ctx.moveTo(x + 10, y - 15); ctx.lineTo(x + 25, y - 5);
+    ctx.moveTo(x + 25, y - 15); ctx.lineTo(x + 10, y - 5);
+    ctx.stroke();
+  }
+}
+
+// Bucle de ejecucion principal
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
