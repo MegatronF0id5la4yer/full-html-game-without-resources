@@ -1,53 +1,56 @@
 # Full HTML Game Without Resources
 
-A small browser-based first-person ASCII world rendered entirely in a single HTML file. The project is intentionally self-contained: no external art, audio, or asset files are required.
+This repository contains a single-file browser game built with plain HTML, CSS, and JavaScript. The entire experience is contained in the `html` file, with no external images, audio files, or asset packs required.
 
-## What is this?
+## Overview
 
-This game is a lightweight pseudo-3D exploration demo built with plain HTML, CSS, and JavaScript. It renders a stylized terrain scene with:
+This project is a compact first-person survival-style prototype that renders a stylized ASCII world directly in the browser. It includes:
 
-- first-person movement
-- mouse-look camera controls
-- dynamic lighting and sky changes
-- rain toggle
-- simple NPC-like creatures and props
-- a castle structure and river terrain
-- ASCII-style raycast rendering
+- WASD movement and mouse-look camera controls
+- a procedural pseudo-3D terrain and environment
+- dynamic lighting and sky variation
+- collectible souls and batteries
+- a hostile creature that patrols and chases the player
+- a bell objective and safe campfire zones
+- rain effects and a simple HUD
 
 ## Features
 
-- Fully self-contained in one file: `html`
-- No dependencies or build step
-- Works directly in a modern browser
-- Keyboard and mouse controls
-- Procedural terrain and environment generation
-- Atmospheric visual effects such as rain, shadows, and water-like refraction
+- Self-contained game logic in one file: `html`
+- No build step or dependencies
+- Runs in a modern browser without external resources
+- Uses native canvas rendering and simple game systems
+- Includes touch controls for mobile-style interaction
+- Designed as a lightweight demo for HTML/CSS/JS game experiments
 
 ## Run it locally
 
-1. Open the repository.
-2. Open the `html` file in your browser.
-3. Move with `W`, `A`, `S`, `D`.
-4. Use the mouse or arrow keys to look around.
-5. Press `R` to toggle rain and `T` to advance the time of day.
+1. Open the repository in your browser or serve it locally.
+2. Open the `html` file directly in a browser or use a local static web server.
+3. Start the game from the intro screen.
+4. Use the keyboard or pointer controls to explore the area.
 
-## Controls
+### Controls
 
 - `W / A / S / D`: move
-- Mouse or arrow keys: look around
-- Click the canvas: lock pointer
+- Mouse: look around
+- `Shift`: sprint
+- `Ctrl` or `C`: crouch
+- `Space`: jump
+- `F`: toggle flashlight
+- `E`: ring the bell
+- `Q`: change render quality
 - `R`: toggle rain
-- `T`: advance time of day
 
 ## Project structure
 
-- `html` — the complete game implementation (HTML, CSS, and JavaScript in one file)
-- `README.md` — project information and usage notes
+- `html` — the complete game implementation
+- `README.md` — project overview and instructions
 
 ## Notes
 
-This repository is intentionally minimal and demonstrates how to create a complete browser game using only native web technologies. It is a good example of a compact, dependency-free game project.
+This repository is intentionally minimal and demonstrates how to build a playable browser game using only native web technologies. It is a good example of a dependency-free, single-file game project.
 
 ## License
 
-This project does not currently include an explicit license file. If you plan to reuse or distribute it, add a license of your choice before publishing.
+This project does not currently include a license file. If you plan to reuse or distribute it, add a license before publishing.
