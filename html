@@ -3,483 +3,1156 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ASCII World Enhanced</title>
+<title>ASCII FORT - TERROR & SUPERVIVENCIA</title>
 <style>
+  * { box-sizing: border-box; }
   html, body {
-    margin: 0;
-    background: #020204;
+    margin: 0; padding: 0;
+    background: #010103;
     overflow: hidden;
-    height: 100%;
-  }
-  body {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-family: monospace;
+    height: 100%; width: 100%;
+    display: flex; justify-content: center; align-items: center;
+    font-family: 'Courier New', Courier, monospace;
     user-select: none;
+  }
+  #wrapper {
+    position: relative;
+    display: flex; justify-content: center; align-items: center;
+    box-shadow: 0 0 60px rgba(0,0,0,1);
   }
   canvas {
     background: #000;
-    box-shadow: 0 0 25px rgba(0,0,0,0.9);
-    max-width: 100%;
-    max-height: 100%;
+    display: block;
+    image-rendering: pixelated;
   }
-  #ui {
+  .hud {
     position: absolute;
-    top: calc(10px + env(safe-area-inset-top, 0px));
-    left: 10px;
-    color: #55ff77;
+    color: #e6ebed;
     font-size: 11px;
+    font-weight: bold;
     pointer-events: none;
-    line-height: 1.5;
+    line-height: 1.4;
+    text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
+    letter-spacing: 0.5px;
+    z-index: 5;
+  }
+  #hud-tl { top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; }
+  #hud-tr { top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px; text-align: right; }
+  #hud-bl {
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    color: #88c090;
+    font-size: 10px;
+    max-width: 62%;
+  }
+  #hud-br {
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    right: 12px;
+    text-align: right;
+  }
+  .bar-row { margin-bottom: 2px; }
+  .bar-wrap {
+    width: 95px; height: 7px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 2px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 5px;
+  }
+  #hp-bar { height: 100%; width: 100%; background: #ff4747; transition: width 0.1s linear; }
+  #stamina-bar { height: 100%; width: 100%; background: #7fd88a; transition: width 0.1s linear; }
+  #battery-bar { height: 100%; width: 100%; background: #ffd043; transition: width 0.1s linear; }
+  #sanity-bar { height: 100%; width: 100%; background: #b070ff; transition: width 0.1s linear; }
+  #minimap {
+    background: rgba(0,0,0,0.65);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 4px;
+    display: block;
+    margin-bottom: 6px;
+    margin-left: auto;
+  }
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.7);
+    font-size: 15px;
+    pointer-events: none;
+    z-index: 6;
+  }
+  #damage-flash {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: radial-gradient(circle, rgba(255,0,0,0.1) 35%, rgba(255,0,0,0.75) 100%);
+    pointer-events: none;
+    z-index: 8;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  #hud-msg {
+    position: absolute;
+    top: 20%; width: 100%;
+    text-align: center;
+    color: #ffeb3b;
+    font-size: 18px;
+    font-weight: bold;
+    pointer-events: none;
+    text-shadow: 2px 2px 5px #000;
+    z-index: 9;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .scanlines {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+    background-size: 100% 3px;
+    opacity: 0.85;
+    z-index: 7;
+  }
+  .screen-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    background: rgba(0,0,0,0.9);
+    color: #fff; text-align: center;
+    z-index: 15;
+  }
+  .btn-ui {
+    margin-top: 15px;
+    padding: 10px 24px;
+    background: #19261c;
+    color: #88c090;
+    font-family: inherit; font-size: 13px; font-weight: bold;
+    border: 1px solid #88c090;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-ui:hover { background: #88c090; color: #000; }
+  #jump-btn {
+    position: absolute; right: 24px;
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: #fff; font-size: 11px; font-weight: bold;
+    font-family: inherit;
+    z-index: 10;
+    touch-action: none;
+    display: none;
+  }
+  @media (pointer: coarse) { #jump-btn { display: block; } }
+  #joystick-zone, #look-zone {
+    position: absolute; top: 0; bottom: 0; width: 50%;
+    z-index: 6; touch-action: none;
+  }
+  #joystick-zone { left: 0; }
+  #look-zone { right: 0; }
+  #joystick-base {
+    position: absolute; left: 26px;
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+    width: 96px; height: 96px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.25);
+    pointer-events: none;
+  }
+  #joystick-knob {
+    position: absolute; left: 28px; top: 28px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.35);
+    pointer-events: none;
   }
 </style>
 </head>
 <body>
-<div id="ui">
-  WASD: mover | Mouse / Flechas: mirar | Click: capturar mouse<br>
-  R: lluvia | T: avanzar hora | sombras dinamicas, refraccion de agua y castillo
+<div id="wrapper">
+  <canvas id="c"></canvas>
+  <div id="scanline-layer" class="scanlines"></div>
+  <div id="crosshair">+</div>
+  <div id="damage-flash"></div>
+  <div id="hud-msg"></div>
+
+  <div id="hud-tl" class="hud">
+    <span style="color:#ffffff; font-size:12px;">ASCII FORT: OBSCURITAS</span><br>
+    <span id="stat-fps">FPS: 60</span> | <span id="stat-pos">POS: 0.0 5.2 2.0</span><br>
+    <span id="stat-time">HORA: 09:15</span> | <span id="stat-safe" style="color:#aaa;">ZONA: VULNERABLE</span><br>
+    <span id="stat-stealth" style="color:#88c090;">SIGILO: DE PIE</span>
+  </div>
+
+  <div id="hud-tr" class="hud">
+    <span id="stat-res" style="color:#d8ca78;">RES: MEDIA [140x75] (Q)</span><br>
+    <span id="stat-torch" style="color:#ffd043;">LINTERNA: ON (F)</span><br>
+    <span id="stat-target" style="color:#6fa8dc;">CAMPANA: 45m</span><br>
+    <span id="stat-threat" style="color:#7fd88a;">AMENAZA: NULA</span>
+  </div>
+
+  <div id="hud-bl" class="hud">
+    WASD: mover | Shift: correr | Ctrl / C: agacharse (sigilo) | Espacio: saltar<br>
+    F: linterna | E: tocar campana | Q: resolucion | R: lluvia
+  </div>
+
+  <div id="hud-br" class="hud">
+    <canvas id="minimap" width="90" height="90"></canvas>
+    <div>BRUJULA: <span id="stat-compass">↑ FRENTE</span></div>
+    <div class="bar-row">VIDA <div class="bar-wrap"><div id="hp-bar"></div></div></div>
+    <div class="bar-row">CORDURA <div class="bar-wrap"><div id="sanity-bar"></div></div></div>
+    <div class="bar-row">STAMINA <div class="bar-wrap"><div id="stamina-bar"></div></div></div>
+    <div class="bar-row">BATERIA <div class="bar-wrap"><div id="battery-bar"></div></div></div>
+    <div>ALMAS: <span id="stat-orbs" style="color:#8ee6ff;">0/6</span> | PILAS: <span id="stat-batts" style="color:#ffd043;">0</span></div>
+  </div>
+
+  <div id="start-screen" class="screen-overlay">
+    <h1 style="color:#88c090; letter-spacing:3px; margin-bottom:8px;">ASCII FORT: OBSCURITAS</h1>
+    <p style="max-width:420px; font-size:12px; line-height:1.7; color:#bbb;">
+      Una entidad ciega pero sensible al ruido te acecha.<br>
+      - Agachate (<b style="color:#fff;">Ctrl / C</b>) para moverte en silencio.<br>
+      - La linterna (<b style="color:#ffd043;">F</b>) gasta bateria. Busca pilas amarillas en el suelo.<br>
+      - Mirar a la bestia drena tu <b style="color:#b070ff;">cordura</b>.<br>
+      - Refugiate en las <b style="color:#ff8844;">fogatas</b> para regenerarte.<br>
+      - Junta <b style="color:#8ee6ff;">6 almas</b> y sube a la torre norte a sonar la campana.
+    </p>
+    <button class="btn-ui" id="btn-start">INICIAR EXPEDICION</button>
+  </div>
+
+  <div id="gameover-screen" class="screen-overlay" style="display:none;">
+    <h1 id="death-title" style="color:#ff3333; letter-spacing:2px; margin-bottom:6px;">HAS MUERTO</h1>
+    <p id="death-reason" style="font-size:12px; color:#aaa; margin-bottom:12px;">La sombra se alimento de tu miedo.</p>
+    <button class="btn-ui" onclick="location.reload()">REINTENTAR</button>
+  </div>
+
+  <div id="win-screen" class="screen-overlay" style="display:none;">
+    <h1 style="color:#ffd043; letter-spacing:2px; margin-bottom:6px;">¡CAMPANA PURIFICADA!</h1>
+    <p id="win-stats" style="font-size:13px; color:#cde; line-height:1.7;"></p>
+    <button class="btn-ui" onclick="location.reload()">JUGAR OTRA VEZ</button>
+  </div>
+
+  <div id="joystick-zone"><div id="joystick-base"><div id="joystick-knob"></div></div></div>
+  <div id="look-zone"></div>
+  <button id="jump-btn">SALTAR</button>
 </div>
-<canvas id="c"></canvas>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const scanlineLayer = document.getElementById('scanline-layer');
 
-const COLS = 130;
-const ROWS = 65;
-const CHAR_W = 7;
-const CHAR_H = 11;
+const QUALITY_PRESETS = [
+  { name: 'RAPIDA [100x55]', cols: 100, rows: 55, cw: 8, ch: 12 },
+  { name: 'MEDIA [140x75]',  cols: 140, rows: 75, cw: 7, ch: 10 },
+  { name: 'ULTRA [176x90]',  cols: 176, rows: 90, cw: 6, ch: 9 }
+];
+let qualityIdx = 1;
+let COLS = QUALITY_PRESETS[qualityIdx].cols;
+let ROWS = QUALITY_PRESETS[qualityIdx].rows;
+let CHAR_W = QUALITY_PRESETS[qualityIdx].cw;
+let CHAR_H = QUALITY_PRESETS[qualityIdx].ch;
 
-canvas.width = COLS * CHAR_W;
-canvas.height = ROWS * CHAR_H;
+function applyResolution() {
+  let q = QUALITY_PRESETS[qualityIdx];
+  COLS = q.cols; ROWS = q.rows; CHAR_W = q.cw; CHAR_H = q.ch;
+  canvas.width = COLS * CHAR_W;
+  canvas.height = ROWS * CHAR_H;
+  document.getElementById('stat-res').innerText = 'RES: ' + q.name + ' (Q)';
+}
+applyResolution();
 
-const RAMP = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+const RAMP_STONE = " .:-=+*#%@#█";
 
-let camX = 0, camY = 3.5, camZ = 0;
-let yaw = 0, pitch = 0;
+// Estado del jugador
+let camX = 0.0, camY = 4.8, camZ = 1.0;
+let camVY = 0;
+let isGrounded = true;
+let yaw = 0.0, pitch = 0.04;
 let keys = {};
 let isRaining = false;
-let timeOfDay = 0.22;
+let timeOfDay = 0.35;
+let autoTime = true;
+let crtEnabled = true;
 
+// Estadisticas
+let stamina = 100;
+let playerHP = 100;
+let sanity = 100;
+let battery = 100;
+let flashlight = true;
+let isCrouched = false;
+let batteriesCollected = 0;
+let gameActive = false;
+let startTime = 0;
+
+// Enemigo
+let enemy = {
+  x: 35.0, z: 45.0, y: 3.0,
+  speed: 0.12,
+  dist: 99.0,
+  state: 'wandering'
+};
+
+// Fogatas / Zonas seguras
+const campfires = [
+  { x: 0, z: 22, r: 6.5 },
+  { x: -28, z: -15, r: 5.5 },
+  { x: 25, z: -20, r: 5.5 }
+];
+
+// Audio sintético WebAudio
+let audioCtx = null;
+let staticGain = null;
+let staticNode = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      setupStaticNoise();
+    } catch(e) {}
+  }
+}
+
+function setupStaticNoise() {
+  let bufferSize = audioCtx.sampleRate * 2;
+  let noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  let output = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+  staticNode = audioCtx.createBufferSource();
+  staticNode.buffer = noiseBuffer;
+  staticNode.loop = true;
+  staticGain = audioCtx.createGain();
+  staticGain.gain.value = 0.0;
+  staticNode.connect(staticGain);
+  staticGain.connect(audioCtx.destination);
+  staticNode.start();
+}
+
+function setStaticVol(vol) {
+  if (staticGain) {
+    staticGain.gain.setValueAtTime(Math.max(0, Math.min(0.2, vol)), audioCtx.currentTime);
+  }
+}
+
+function beep(freq, dur, type='sine', gainVal=0.06) {
+  if (!audioCtx) return;
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.value = gainVal;
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start();
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  osc.stop(audioCtx.currentTime + dur + 0.02);
+}
+function playCollect() {
+  beep(523, 0.08, 'triangle', 0.08);
+  setTimeout(() => beep(784, 0.12, 'square', 0.06), 70);
+}
+function playBatterySound() {
+  beep(400, 0.06, 'sine', 0.08);
+  setTimeout(() => beep(600, 0.08, 'sine', 0.08), 50);
+}
+function playFootstep() {
+  if (isCrouched) return;
+  beep(95 + Math.random() * 30, 0.05, 'triangle', 0.025);
+}
+
+let footstepTimer = 0;
+let nextHeartbeat = 0;
+
+// Objetivos
+const ORBS_REQUIRED = 6;
+let orbs = [];
+let batteries = [];
+let orbsCollected = 0;
+const bellPos = { x: 0, z: 10.0, y: 8.6 };
+
+function showHudMsg(text, color='#ffeb3b') {
+  let m = document.getElementById('hud-msg');
+  m.innerText = text;
+  m.style.color = color;
+  m.style.opacity = '1';
+  clearTimeout(m._timer);
+  m._timer = setTimeout(() => { m.style.opacity = '0'; }, 1600);
+}
+
+// Teclado
 window.addEventListener('keydown', e => {
   let k = e.key.toLowerCase();
   keys[k] = true;
+  ensureAudio();
+
+  if (k === 'control' || k === 'c') {
+    isCrouched = !isCrouched;
+    let st = document.getElementById('stat-stealth');
+    st.innerText = isCrouched ? 'SIGILO: AGACHADO (SILENCIOSO)' : 'SIGILO: DE PIE';
+    st.style.color = isCrouched ? '#7fd88a' : '#aaa';
+  }
+  if (k === 'q') {
+    qualityIdx = (qualityIdx + 1) % QUALITY_PRESETS.length;
+    applyResolution();
+    showHudMsg("CALIDAD: " + QUALITY_PRESETS[qualityIdx].name);
+  }
+  if (k === 'f') {
+    if (battery > 0) {
+      flashlight = !flashlight;
+      updateTorchHUD();
+      beep(850, 0.03, 'square', 0.04);
+    } else {
+      showHudMsg("¡SIN BATERIA!", '#ff5555');
+      beep(120, 0.1, 'sawtooth', 0.08);
+    }
+  }
   if (k === 'r') isRaining = !isRaining;
-  if (k === 't') timeOfDay = (timeOfDay + 0.15) % 1.0;
+  if (k === 'e') tryRingBell();
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
-canvas.addEventListener('click', () => { canvas.requestPointerLock(); });
+function updateTorchHUD() {
+  let el = document.getElementById('stat-torch');
+  el.innerText = 'LINTERNA: ' + (flashlight ? 'ON (F)' : 'OFF (F)');
+  el.style.color = flashlight ? '#ffd043' : '#777';
+}
+
+function tryRingBell() {
+  let d = Math.hypot(camX - bellPos.x, camZ - bellPos.z);
+  if (d < 5.5 && Math.abs(camY - bellPos.y) < 5.0) {
+    if (orbsCollected < ORBS_REQUIRED) {
+      showHudMsg(`¡SELLADA! FALTAN ${ORBS_REQUIRED - orbsCollected} ALMAS`, '#ff6666');
+      beep(140, 0.25, 'sawtooth', 0.08);
+      return;
+    }
+    gameActive = false;
+    setStaticVol(0);
+    beep(220, 1.4, 'sine', 0.12);
+    beep(440, 1.2, 'triangle', 0.08);
+    let totalSec = Math.floor((performance.now() - startTime) / 1000);
+    document.getElementById('win-stats').innerHTML =
+      `Sobreviviste en: <b>${totalSec}s</b><br>Almas: <b>${orbsCollected}/${orbs.length}</b> | Pilas: <b>${batteriesCollected}</b><br>Cordura: <b>${Math.ceil(sanity)}%</b> | Vida: <b>${Math.ceil(playerHP)}%</b>`;
+    document.getElementById('win-screen').style.display = 'flex';
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+}
+
+// Pantalla inicio
+document.getElementById('btn-start').addEventListener('click', () => {
+  document.getElementById('start-screen').style.display = 'none';
+  ensureAudio();
+  canvas.requestPointerLock();
+  gameActive = true;
+  startTime = performance.now();
+  showHudMsg("¡JUNTA 6 ALMAS EN SILENCIO!");
+});
+
+canvas.addEventListener('click', () => {
+  if (gameActive) { canvas.requestPointerLock(); ensureAudio(); }
+});
 window.addEventListener('mousemove', e => {
   if (document.pointerLockElement === canvas) {
-    yaw += e.movementX * 0.003;
-    pitch -= e.movementY * 0.003;
-    pitch = Math.max(-1.4, Math.min(1.4, pitch));
+    yaw += e.movementX * 0.0022;
+    pitch = Math.max(-1.3, Math.min(1.3, pitch - e.movementY * 0.0022));
   }
 });
 
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+// Controles tactiles
+let jumpBtn = document.getElementById('jump-btn');
+jumpBtn.addEventListener('touchstart', e => { keys[' '] = true; ensureAudio(); e.preventDefault(); }, { passive: false });
+jumpBtn.addEventListener('touchend', e => { keys[' '] = false; e.preventDefault(); }, { passive: false });
+
+const joystickZone = document.getElementById('joystick-zone');
+const joystickBase = document.getElementById('joystick-base');
+const joystickKnob = document.getElementById('joystick-knob');
+const lookZone = document.getElementById('look-zone');
+let joyTouchId = null, joyCenter = { x: 0, y: 0 }, joyVec = { f: 0, r: 0 };
+
+function joyBaseCenter() {
+  let rect = joystickBase.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
-const rand = mulberry32(1337);
+function updateJoystick(touch) {
+  let dx = touch.clientX - joyCenter.x, dy = touch.clientY - joyCenter.y;
+  let maxR = 40, dist = Math.hypot(dx, dy);
+  if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
+  joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  joyVec.r = dx / maxR; joyVec.f = -dy / maxR;
+}
+function resetJoystick() {
+  joyTouchId = null; joyVec.f = 0; joyVec.r = 0;
+  joystickKnob.style.transform = 'translate(0px, 0px)';
+}
+joystickZone.addEventListener('touchstart', e => {
+  for (let t of e.changedTouches) if (joyTouchId === null) { joyTouchId = t.identifier; joyCenter = joyBaseCenter(); updateJoystick(t); }
+  e.preventDefault();
+}, { passive: false });
+joystickZone.addEventListener('touchmove', e => {
+  for (let t of e.changedTouches) if (t.identifier === joyTouchId) updateJoystick(t);
+  e.preventDefault();
+}, { passive: false });
+joystickZone.addEventListener('touchend', e => { for (let t of e.changedTouches) if (t.identifier === joyTouchId) resetJoystick(); });
+joystickZone.addEventListener('touchcancel', e => { for (let t of e.changedTouches) if (t.identifier === joyTouchId) resetJoystick(); });
+
+let lookTouchId = null, lookLast = { x: 0, y: 0 };
+lookZone.addEventListener('touchstart', e => {
+  for (let t of e.changedTouches) if (lookTouchId === null) { lookTouchId = t.identifier; lookLast = { x: t.clientX, y: t.clientY }; }
+  e.preventDefault();
+}, { passive: false });
+lookZone.addEventListener('touchmove', e => {
+  for (let t of e.changedTouches) if (t.identifier === lookTouchId) {
+    yaw += (t.clientX - lookLast.x) * 0.0055;
+    pitch = Math.max(-1.3, Math.min(1.3, pitch - (t.clientY - lookLast.y) * 0.0055));
+    lookLast = { x: t.clientX, y: t.clientY };
+  }
+  e.preventDefault();
+}, { passive: false });
+lookZone.addEventListener('touchend', e => { for (let t of e.changedTouches) if (t.identifier === lookTouchId) lookTouchId = null; });
+lookZone.addEventListener('touchcancel', e => { for (let t of e.changedTouches) if (t.identifier === lookTouchId) lookTouchId = null; });
+
+// Generador procedural
+function mulberry32(a) {
+  return function() {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+const rng = mulberry32(954821814);
+
+function getRoadPathX(z) {
+  if (z >= 12.0 && z <= 34.0) return 0.0;
+  return (z < 12.0) ? Math.sin((12.0 - z) * 0.07) * 7.5 : Math.sin((z - 34.0) * 0.06) * 6.0;
+}
+function getRiverCenterX(z) { return Math.sin(z * 0.038 + 0.4) * 22.0 + 16.0; }
 
 function terrainHeight(x, z) {
-  let river = Math.sin(z * 0.08) * 6.0;
-  let distToRiver = Math.abs(x - river);
-  let riverCarve = Math.min(2.5, Math.max(0.0, 3.5 - distToRiver * 0.7));
+  let mountains = 0;
+  if (z > 32.0) mountains += (Math.abs(Math.sin(x * 0.042 + 1.2)) * 16.0 + Math.abs(Math.sin(x * 0.088 - 0.4)) * 9.0) * Math.min(1.0, (z - 32.0) * 0.14);
+  if (x > 38.0) mountains += (Math.abs(Math.sin(z * 0.045 + 0.7)) * 14.0 + Math.abs(Math.sin(z * 0.09 + 2.0)) * 7.0) * Math.min(1.0, (x - 38.0) * 0.14);
+  let hills = Math.sin(x * 0.032) * Math.cos(z * 0.028) * 3.8 + Math.sin(x * 0.075 + z * 0.055) * 1.8 + 2.2;
+  let h = hills + mountains;
 
-  let h = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 4.0;
-  h += Math.sin(x * 0.2 + z * 0.15) * 1.5;
-  h += Math.sin(x * 0.4 - z * 0.3) * 0.4;
-  return h - riverCarve;
+  let rDist = Math.abs(x - getRiverCenterX(z));
+  if (rDist < 8.5) {
+    let t = rDist / 8.5;
+    h -= (1.0 - t * t) * 4.6;
+  }
+  let fortDist = Math.hypot(x, z - 22.0);
+  if (fortDist < 19.0) {
+    let blend = Math.max(0.0, Math.min(1.0, (fortDist - 11.0) / 8.0));
+    h = 1.0 * (1.0 - blend) + h * blend;
+  }
+  return h;
 }
 
-function castleBoxDist(x, y, z) {
-  let cz = z - 28.0;
-  let cx = x;
-  if (Math.abs(cz) > 12 || Math.abs(cx) > 16) return 999;
+// Arboles
+let pineTrees = [], treeGrid = {};
+for (let i = 0; i < 90; i++) {
+  let tx = (rng() - 0.5) * 120.0, tz = (rng() - 0.5) * 120.0;
+  if (Math.hypot(tx, tz - 22.0) < 17.0 || Math.abs(tx - getRiverCenterX(tz)) < 5.8 || Math.abs(tx - getRoadPathX(tz)) < 3.0) continue;
+  let th = terrainHeight(tx, tz);
+  if (th < 0.6 || th > 18.0) continue;
+  let totalH = 4.2 + rng() * 3.0;
+  let tr = { x: tx, z: tz, baseY: th, foliageBase: th + totalH * 0.35, foliageH: totalH * 0.75, foliageR: 1.1 + rng() * 0.55 };
+  pineTrees.push(tr);
+  let cellKey = Math.floor(tx / 12) + ',' + Math.floor(tz / 12);
+  if (!treeGrid[cellKey]) treeGrid[cellKey] = [];
+  treeGrid[cellKey].push(tr);
+}
 
-  let isTower = (Math.abs(Math.abs(cx) - 10) < 2.0) && (Math.abs(Math.abs(cz) - 6) < 2.0);
-  if (isTower) {
-    let th = terrainHeight(cx, z);
-    if (y >= th && y <= th + 6.0) return 0.1;
-  }
+// Orbes
+for (let i = 0; i < 18; i++) {
+  let ox = (rng() - 0.5) * 105.0, oz = (rng() - 0.5) * 105.0;
+  if (Math.abs(ox - getRiverCenterX(oz)) < 6.5) continue;
+  let th = terrainHeight(ox, oz);
+  if (th < 0.4 || th > 16.0) continue;
+  orbs.push({ x: ox, z: oz, baseY: th + 1.2, collected: false, phase: rng() * 6.28 });
+}
 
-  let isWallX = Math.abs(Math.abs(cz) - 6) < 1.0 && Math.abs(cx) <= 10;
-  let isWallZ = Math.abs(Math.abs(cx) - 10) < 1.0 && Math.abs(cz) <= 6;
-  if (isWallX || isWallZ) {
-    if (Math.abs(cz - 6) < 1.0 && Math.abs(cx) < 2.2 && y < terrainHeight(cx, z) + 2.8) {
-      return 999;
+// Pilas
+for (let i = 0; i < 8; i++) {
+  let bx = (rng() - 0.5) * 90.0, bz = (rng() - 0.5) * 90.0;
+  let th = terrainHeight(bx, bz);
+  batteries.push({ x: bx, z: bz, baseY: th + 0.6, collected: false });
+}
+
+function checkPineHit(px, py, pz) {
+  let cell = treeGrid[Math.floor(px / 12) + ',' + Math.floor(pz / 12)];
+  if (!cell) return null;
+  for (let i = 0; i < cell.length; i++) {
+    let tr = cell[i];
+    let dx = px - tr.x, dz = pz - tr.z, d2 = dx * dx + dz * dz;
+    let relY = py - tr.foliageBase;
+    if (relY >= 0.0 && relY <= tr.foliageH) {
+      let taper = 1.0 - (relY / tr.foliageH);
+      if (d2 <= (tr.foliageR * taper) ** 2) return { type: 'leaves', taper };
     }
-    let th = terrainHeight(cx, z);
-    if (y >= th && y <= th + 4.2) return 0.1;
+    if (py >= tr.baseY && py <= tr.foliageBase && d2 <= 0.08) return { type: 'trunk' };
   }
-  return 999;
+  return null;
 }
 
-let mobs = [
-  { x: 3, z: 8, vx: 0.02, vz: 0.01, size: 0.7, type: 'slime', timer: 0 },
-  { x: -5, z: 12, vx: -0.01, vz: 0.02, size: 0.8, type: 'golem', timer: 0 },
-  { x: 8, z: 15, vx: 0.015, vz: -0.02, size: 0.6, type: 'slime', timer: 0 },
-  { x: -2, z: 20, vx: -0.01, vz: -0.01, size: 0.9, type: 'golem', timer: 0 }
-];
+function checkFortHit(px, py, pz) {
+  if (Math.abs(px) > 16.0 || pz < 8.0 || pz > 36.0 || py < 0.8 || py > 9.5) return null;
+  let wallH = 5.2, towerH = 7.4;
 
-let staticProps = [];
-for (let i = 0; i < 40; i++) {
-  let x = (rand() - 0.5) * 60;
-  let z = (rand() - 0.5) * 60;
-  let th = terrainHeight(x, z);
-  if (th < 0.8 || (z > 14 && z < 42 && Math.abs(x) < 20)) continue;
-  let trunkH = 1.3 + rand() * 0.8;
-  let canopyR = 0.9 + rand() * 0.6;
-  staticProps.push({ type: 'trunk', x, z, y: th + trunkH * 0.5, size: 0.25 });
-  staticProps.push({ type: 'canopy', x, z, y: th + trunkH + canopyR * 0.55, size: canopyR });
-}
-
-let birds = [];
-for (let i = 0; i < 6; i++) {
-  birds.push({
-    cx: (rand() - 0.5) * 20,
-    cz: (rand() - 0.5) * 20,
-    radius: 4 + rand() * 6,
-    height: 7 + rand() * 4,
-    angle: rand() * Math.PI * 2,
-    speed: 0.01 + rand() * 0.02,
-    size: 0.35,
-    type: 'bird'
-  });
-}
-
-let sceneObjects = [];
-
-function updateMobs() {
-  for (let m of mobs) {
-    m.timer += 0.05;
-    m.x += m.vx;
-    m.z += m.vz;
-    if (Math.abs(m.x) > 25) m.vx *= -1;
-    if (Math.abs(m.z) > 25) m.vz *= -1;
-    let baseH = Math.max(0.0, terrainHeight(m.x, m.z));
-    let hop = m.type === 'slime' ? Math.abs(Math.sin(m.timer * 2)) * 0.5 : 0;
-    m.y = baseH + m.size * 0.5 + hop;
+  if (pz >= 9.2 && pz <= 10.8 && Math.abs(px) <= 12.0) {
+    if (Math.abs(px) <= 2.2 && py <= 3.8) return null;
+    if (py > wallH) return (py <= wallH + 0.9 && (Math.floor((px + 12.0) * 1.3) % 2 === 0)) ? { nx: 0, nz: -1 } : null;
+    return { nx: 0, nz: -1 };
   }
-  for (let b of birds) {
-    b.angle += b.speed;
-    b.x = b.cx + Math.cos(b.angle) * b.radius;
-    b.z = b.cz + Math.sin(b.angle) * b.radius;
-    b.y = b.height + Math.sin(b.angle * 3) * 0.5;
+  if (pz >= 29.2 && pz <= 30.8 && Math.abs(px) <= 12.0) {
+    if (py > wallH) return (py <= wallH + 0.9 && (Math.floor((px + 12.0) * 1.3) % 2 === 0)) ? { nx: 0, nz: 1 } : null;
+    return { nx: 0, nz: 1 };
   }
-  sceneObjects = mobs.concat(staticProps, birds);
-}
+  if ((Math.abs(px - (-12.0)) <= 0.8 || Math.abs(px - 12.0) <= 0.8) && pz >= 10.0 && pz <= 30.0) {
+    let side = px < 0 ? -1 : 1;
+    if (py > wallH) return (py <= wallH + 0.9 && (Math.floor((pz - 10.0) * 1.3) % 2 === 0)) ? { nx: side, nz: 0 } : null;
+    return { nx: side, nz: 0 };
+  }
 
-function intersectSpheres(ox, oy, oz, rx, ry, rz, maxD) {
-  let hitDist = maxD;
-  let objHit = null;
-  for (let m of sceneObjects) {
-    let ocx = ox - m.x;
-    let ocy = oy - m.y;
-    let ocz = oz - m.z;
-    let b = ocx * rx + ocy * ry + ocz * rz;
-    let c = ocx * ocx + ocy * ocy + ocz * ocz - (m.size * m.size);
-    let disc = b * b - c;
-    if (disc > 0) {
-      let d = -b - Math.sqrt(disc);
-      if (d > 0.15 && d < hitDist) {
-        hitDist = d;
-        objHit = m;
+  let towers = [{ x: -3.8, z: 10.0, r: 1.4 }, { x: 3.8, z: 10.0, r: 1.4 }, { x: -12.5, z: 9.5, r: 1.8 }, { x: 12.5, z: 9.5, r: 1.8 }, { x: -12.5, z: 30.5, r: 1.8 }, { x: 12.5, z: 30.5, r: 1.8 }];
+  for (let tw of towers) {
+    if (Math.abs(px - tw.x) <= tw.r && Math.abs(pz - tw.z) <= tw.r) {
+      let tnx = (px - tw.x) || 0.01, tnz = (pz - tw.z) || 0.01, tlen = Math.hypot(tnx, tnz);
+      if (py > towerH) {
+        if (py <= towerH + 1.0 && ((Math.floor((px - tw.x + tw.r) * 2.2) % 2 === 0) || (Math.floor((pz - tw.z + tw.r) * 2.2) % 2 === 0))) {
+          return { isTowerTop: true, nx: tnx / tlen, nz: tnz / tlen };
+        }
+        return null;
       }
+      return { isTower: true, nx: tnx / tlen, nz: tnz / tlen };
     }
   }
-  return { dist: hitDist, mob: objHit };
+  return null;
 }
 
-function propAppearance(type) {
-  switch (type) {
-    case 'slime': return { color: { r: 50, g: 240, b: 100 }, ch: 'o', b: 0.85 };
-    case 'golem': return { color: { r: 210, g: 130, b: 50 }, ch: '#', b: 0.85 };
-    case 'trunk': return { color: { r: 120, g: 80, b: 40 }, ch: '|', b: 0.5 };
-    case 'canopy': return { color: { r: 35, g: 155, b: 55 }, ch: '&', b: 0.7 };
-    case 'bird': return { color: { r: 30, g: 30, b: 35 }, ch: 'v', b: 0.4 };
-    default: return { color: { r: 200, g: 200, b: 200 }, ch: '?', b: 0.6 };
-  }
-}
-
-function getSunDir() {
-  let ang = timeOfDay * Math.PI * 2 - Math.PI * 0.5;
-  let sx = Math.cos(ang) * 0.8;
-  let sy = Math.sin(ang);
-  let sz = -0.4;
+function getSunDirection(time) {
+  let angle = time * Math.PI * 2.0 - Math.PI * 0.5;
+  let sy = Math.sin(angle), sx = Math.cos(angle) * 0.85, sz = -0.45;
   let len = Math.hypot(sx, sy, sz);
-  return { x: sx / len, y: sy / len, z: sz / len };
+  return { x: sx / len, y: sy / len, z: sz / len, elev: sy };
 }
 
-function traceShadow(ox, oy, oz, sun) {
-  if (sun.y <= 0.05) return 0.25;
-  let st = 0.5;
-  let shadowStep = 0.8;
-  while (st < 18.0) {
-    let spx = ox + sun.x * st;
-    let spy = oy + sun.y * st;
-    let spz = oz + sun.z * st;
-    if (spy < terrainHeight(spx, spz) || castleBoxDist(spx, spy, spz) < 0.5) {
-      return 0.3;
-    }
-    st += shadowStep;
+function calculateShadow(px, py, pz, sunDir) {
+  if (sunDir.y <= 0.05) return 0.25;
+  let dist = 1.6, maxShadowDist = 24.0, step = 4.2;
+  while (dist < maxShadowDist) {
+    let sx = px + sunDir.x * dist, sy = py + sunDir.y * dist, sz = pz + sunDir.z * dist;
+    if (sy < terrainHeight(sx, sz) || checkFortHit(sx, sy, sz)) return 0.3;
+    dist += step;
   }
   return 1.0;
 }
 
-function getSceneColor(rx, ry, rz, ox, oy, oz, tNow) {
-  let sun = getSunDir();
-  let maxDist = 48;
-  let step = 0.38;
-  let hit = false;
-  let hitWater = false;
-  let t = 0.5;
+function sampleSky(rx, ry, rz, tNow, sunDir) {
+  let sunDot = rx * sunDir.x + ry * sunDir.y + rz * sunDir.z;
+  if (sunDot > 0.992 && sunDir.y > -0.05) return { color: { r: 255, g: 255, b: 210 }, ch: '☼' };
 
-  let rColor = { r: 120, g: 170, b: 240 };
-  let brightness = 0.2;
-  let customChar = null;
+  let skyFade = Math.max(0.0, Math.min(1.0, ry * 1.5 + 0.1));
+  let lf = Math.max(0.05, sunDir.elev);
+  let r = Math.floor((120 * (1.0 - skyFade) + 50 * skyFade) * lf);
+  let g = Math.floor((170 * (1.0 - skyFade) + 100 * skyFade) * lf);
+  let b = Math.floor((240 * (1.0 - skyFade) + 210 * skyFade) * lf);
 
-  let propHit = intersectSpheres(ox, oy, oz, rx, ry, rz, maxDist);
+  if (sunDot > 0.94 && sunDir.y > 0) {
+    let glow = (sunDot - 0.94) / 0.06;
+    r = Math.min(255, Math.floor(r + 140 * glow));
+    g = Math.min(255, Math.floor(g + 110 * glow));
+  }
+  if (sunDir.elev < 0.05 && ry > 0.18) {
+    let sHash = Math.sin(rx * 5312.3 + rz * 7841.9) * 43758.5453;
+    if ((sHash - Math.floor(sHash)) > 0.996) return { color: { r: 220, g: 220, b: 240 }, ch: '.' };
+  }
+  return { color: { r, g, b }, ch: ' ' };
+}
+
+// Raymarching
+function traceScene(ox, oy, oz, rx, ry, rz, maxDist, tNow, sunDir, fwd) {
+  let t = 0.6, step = 0.32;
 
   while (t < maxDist) {
-    if (propHit.mob && t >= propHit.dist) {
-      let ap = propAppearance(propHit.mob.type);
-      rColor = ap.color;
-      customChar = ap.ch;
-      brightness = ap.b * (1.0 - propHit.dist / maxDist * 0.4);
-      hit = true;
-      break;
-    }
+    let px = ox + rx * t, py = oy + ry * t, pz = oz + rz * t;
 
-    let px = ox + rx * t;
-    let py = oy + ry * t;
-    let pz = oz + rz * t;
-
-    // Castillo / murallas
-    if (castleBoxDist(px, py, pz) < 0.2) {
-      let shadow = traceShadow(px, py + 0.1, pz, sun);
-      rColor = { r: 175, g: 180, b: 190 };
-      brightness = (0.35 + 0.55 * Math.max(0, sun.y) * shadow) * (1.0 - t / maxDist * 0.4);
-      customChar = '#';
-      hit = true;
-      break;
-    }
-
-    // Agua con reflejo y refraccion
-    if (!hitWater && py <= 0.0) {
-      hitWater = true;
-      let distToWater = -oy / ry;
-      if (distToWater > 0 && distToWater < maxDist && (!propHit.mob || distToWater < propHit.dist)) {
-        px = ox + rx * distToWater;
-        pz = oz + rz * distToWater;
-        py = 0.0;
-        t = distToWater;
-
-        let fresnel = Math.pow(1.0 - Math.abs(ry), 2.5);
-
-        // Si mira empinado hacia abajo, refracta hacia el fondo del rio
-        if (fresnel < 0.45) {
-          let bedDepth = 1.6;
-          let bedH = terrainHeight(px, pz);
-          let bedDist = Math.abs(bedH);
-          let bedShadow = traceShadow(px, bedH + 0.1, pz, sun);
-          rColor = { r: 50, g: 75, b: 85 };
-          brightness = (0.2 + 0.4 * bedShadow) * (1.0 - (bedDist / bedDepth) * 0.4);
-          customChar = '~';
-          hit = true;
-          break;
-        }
-
-        // Rayo rebotado hacia arriba (reflejo)
-        let ripple = Math.sin(px * 2.2 + tNow * 0.003) * 0.04 + Math.cos(pz * 2.2 + tNow * 0.002) * 0.04;
-        ry = -ry + ripple;
-        let len = Math.hypot(rx, ry, rz);
-        rx /= len; ry /= len; rz /= len;
-        ox = px; oy = 0.02; oz = pz;
-        t = 0.5;
-        propHit = intersectSpheres(ox, oy, oz, rx, ry, rz, maxDist);
-        continue;
+    // 1. Enemigo en 3D
+    if (gameActive) {
+      let edx = px - enemy.x, edy = py - (enemy.y + 1.2), edz = pz - enemy.z;
+      let eDist2 = edx * edx + edy * edy + edz * edz;
+      if (eDist2 < 1.1) {
+        let ch = (eDist2 < 0.25) ? 'O' : (Math.random() > 0.4 ? '@' : '&');
+        let flick = 180 + Math.floor(Math.random() * 75);
+        return { hit: true, dist: t, color: { r: flick, g: 20, b: 20 }, ch: ch };
       }
     }
 
+    // 2. Fogatas
+    for (let c of campfires) {
+      let cdx = px - c.x, cdz = pz - c.z, cdy = py - terrainHeight(c.x, c.z);
+      if (cdx * cdx + cdz * cdz < 0.6 && cdy > 0 && cdy < 1.2) {
+        let fSpark = Math.random() > 0.5 ? '^' : '*';
+        return { hit: true, dist: t, color: { r: 255, g: 140, b: 40 }, ch: fSpark };
+      }
+    }
+
+    // 3. Pilas
+    for (let b of batteries) {
+      if (b.collected) continue;
+      let bdx = px - b.x, bdz = pz - b.z, bdy = py - b.baseY;
+      if (bdx * bdx + bdz * bdz < 0.4 && Math.abs(bdy) < 0.5) {
+        return { hit: true, dist: t, color: { r: 255, g: 220, b: 60 }, ch: 'B' };
+      }
+    }
+
+    // 4. Castillo
+    let fort = checkFortHit(px, py, pz);
+    if (fort) {
+      let shade = calculateShadow(px, py, pz, sunDir);
+      let nx = fort.nx || 0, nz = fort.nz || 0;
+      let faceDot = Math.max(0.15, nx * sunDir.x + nz * sunDir.z + 0.1 * sunDir.y);
+
+      let torchGlow = 0;
+      if (flashlight && battery > 0) {
+        let dirX = px - ox, dirY = py - oy, dirZ = pz - oz;
+        let dLen = Math.hypot(dirX, dirY, dirZ);
+        let dotFwd = (dirX / dLen) * fwd.x + (dirY / dLen) * fwd.y + (dirZ / dLen) * fwd.z;
+        if (dotFwd > 0.78 && dLen < 22.0) {
+          torchGlow = (dotFwd - 0.78) / 0.22 * (1.0 - dLen / 22.0) * 0.9;
+        }
+      }
+
+      let lightVal = Math.min(1.0, Math.max(0.12, 0.25 + 0.75 * faceDot * shade + torchGlow));
+      let charIdx = Math.floor(lightVal * (RAMP_STONE.length - 1));
+      let col = { r: Math.floor(160 * lightVal), g: Math.floor(165 * lightVal), b: Math.floor(180 * lightVal) };
+      return { hit: true, dist: t, color: col, ch: RAMP_STONE[charIdx] };
+    }
+
+    // 5. Campana
+    let bdx = px - bellPos.x, bdy = py - bellPos.y, bdz = pz - bellPos.z;
+    if (bdx * bdx + bdy * bdy + bdz * bdz < 0.6) {
+      let pulse = 0.7 + 0.3 * Math.sin(tNow * 0.007);
+      let unlocked = orbsCollected >= ORBS_REQUIRED;
+      let col = unlocked ? { r: Math.floor(255 * pulse), g: Math.floor(220 * pulse), b: 60 } : { r: 140, g: 50, b: 50 };
+      return { hit: true, dist: t, color: col, ch: unlocked ? '🔔' : '#' };
+    }
+
+    // 6. Orbes
+    for (let o of orbs) {
+      if (o.collected) continue;
+      let bob = Math.sin(tNow * 0.005 + o.phase) * 0.35;
+      let odx = px - o.x, odz = pz - o.z, ody = py - (o.baseY + bob);
+      if (odx * odx + odz * odz < 0.5 && Math.abs(ody) < 0.8) {
+        let pulse = 0.7 + 0.3 * Math.sin(tNow * 0.01 + o.phase);
+        return { hit: true, dist: t, color: { r: Math.floor(140 * pulse), g: Math.floor(230 * pulse), b: 255 }, ch: '*' };
+      }
+    }
+
+    // 7. Arboles
+    let pine = checkPineHit(px, py, pz);
+    if (pine) {
+      let shade = calculateShadow(px, py, pz, sunDir);
+      if (pine.type === 'leaves') {
+        let col = { r: Math.floor(20 * shade), g: Math.floor((90 + pine.taper * 60) * shade), b: Math.floor(30 * shade) };
+        return { hit: true, dist: t, color: col, ch: pine.taper > 0.5 ? '^' : '*' };
+      } else {
+        return { hit: true, dist: t, color: { r: Math.floor(70 * shade), g: Math.floor(40 * shade), b: 20 }, ch: '|' };
+      }
+    }
+
+    // 8. Terreno + Resplandor de fogatas
     let th = terrainHeight(px, pz);
-    if (py < th) {
-      hit = true;
-      let eps = 0.1;
+    if (py <= th) {
+      let eps = 0.15;
       let dx = terrainHeight(px + eps, pz) - terrainHeight(px - eps, pz);
-      let dz = terrainHeight(px, pz + eps) - terrainHeight(px, pz - eps);
-      let nx = -dx, ny = 2 * eps, nz = -dz;
-      let nlen = Math.hypot(nx, ny, nz);
+      let dz = terrainHeight(px, pz + eps) - terrainHeight(px - eps, pz);
+      let nx = -dx, ny = 2.0 * eps, nz = -dz, nlen = Math.hypot(nx, ny, nz);
       nx /= nlen; ny /= nlen; nz /= nlen;
 
-      let dot = Math.max(0.05, nx * sun.x + ny * sun.y + nz * sun.z);
-      let shadow = traceShadow(px, py + 0.1, pz, sun);
-      let lit = (dot * shadow) * Math.max(0.1, sun.y);
+      let dot = Math.max(0.0, nx * sunDir.x + ny * sunDir.y + nz * sunDir.z);
+      let shadow = calculateShadow(px, py, pz, sunDir);
 
-      if (th < 0.3) {
-        rColor = { r: 195, g: 180, b: 125 };
-      } else if (th > 3.8) {
-        rColor = { r: 215, g: 220, b: 230 }; // nieve en cumbres
-      } else {
-        rColor = { r: Math.floor(30 + lit * 70), g: Math.floor(100 + lit * 110), b: Math.floor(35 + lit * 45) };
-      }
-
-      if (hitWater) {
-        rColor.r = Math.floor(rColor.r * 0.4);
-        rColor.g = Math.floor(rColor.g * 0.6);
-        rColor.b = Math.floor(rColor.b * 0.85 + 35);
-      }
-
-      brightness = (0.25 + lit * 0.75) * (1.0 - t / maxDist);
-      break;
-    }
-    t += step;
-  }
-
-  if (!hit) {
-    let sunDot = rx * sun.x + ry * sun.y + rz * sun.z;
-    if (sunDot > 0.985 && sun.y > -0.05) {
-      rColor = { r: 255, g: 245, b: 180 };
-      brightness = 1.0;
-      customChar = 'O';
-    } else {
-      let cloudT = tNow * 0.0003;
-      let cX = rx * 3.5 + cloudT;
-      let cZ = rz * 3.5;
-      let cloudVal = Math.sin(cX * 2.0) * Math.cos(cZ * 2.0) + Math.sin(cX * 4.5 + cZ * 3.0) * 0.5;
-
-      if (ry > 0.15 && cloudVal > 0.35) {
-        let puff = Math.min(1.0, (cloudVal - 0.35) * 2.5);
-        let dayLight = Math.max(0.2, sun.y);
-        let shade = isRaining ? 110 : Math.floor(230 * dayLight);
-        rColor = { r: Math.floor(shade * puff), g: Math.floor(shade * puff), b: Math.floor((shade + 15) * puff) };
-        brightness = isRaining ? 0.45 : (0.4 + dayLight * 0.5);
-        customChar = cloudVal > 0.8 ? '@' : (cloudVal > 0.5 ? '%' : '*');
-      } else {
-        let skyFade = Math.max(0, Math.min(1, ry + 0.3));
-        let dayFactor = Math.max(0.05, Math.min(1.0, sun.y + 0.2));
-        let skyR = isRaining ? 60 : Math.floor(110 * dayFactor);
-        let skyG = isRaining ? 80 : Math.floor(165 * dayFactor);
-        let skyB = isRaining ? 110 : Math.floor(245 * dayFactor);
-
-        rColor = {
-          r: Math.floor(skyR * skyFade),
-          g: Math.floor(skyG * skyFade),
-          b: Math.floor(skyB * skyFade)
-        };
-        brightness = 0.2 + skyFade * 0.6 * dayFactor;
-
-        if (sun.y < 0.1 && ry > 0.2) {
-          let starHash = Math.sin(rx * 5312.3 + rz * 7841.9) * 43758.5453;
-          starHash -= Math.floor(starHash);
-          if (starHash > 0.995) {
-            rColor = { r: 235, g: 235, b: 210 };
-            brightness = 0.9;
-            customChar = '.';
-          }
+      let torchGlow = 0;
+      if (flashlight && battery > 0) {
+        let dirX = px - ox, dirY = py - oy, dirZ = pz - oz;
+        let dLen = Math.hypot(dirX, dirY, dirZ);
+        let dotFwd = (dirX / dLen) * fwd.x + (dirY / dLen) * fwd.y + (dirZ / dLen) * fwd.z;
+        if (dotFwd > 0.75 && dLen < 20.0) {
+          torchGlow = (dotFwd - 0.75) / 0.25 * (1.0 - dLen / 20.0) * 0.95;
         }
       }
+
+      // Luz de fogata en el piso
+      let fireGlow = 0;
+      for (let c of campfires) {
+        let cDist = Math.hypot(px - c.x, pz - c.z);
+        if (cDist < c.r) fireGlow += (1.0 - cDist / c.r) * 0.6;
+      }
+
+      let light = Math.min(1.0, Math.max(0.12, (0.28 + 0.72 * dot) * shadow + torchGlow + fireGlow));
+      let roadDist = Math.abs(px - getRoadPathX(pz));
+      let col = { r: 45, g: 145, b: 50 }, ch = '.';
+
+      if (th > 13.5) { col = { r: 230, g: 235, b: 245 }; ch = '*'; }
+      else if (th > 9.5) { col = { r: 125, g: 120, b: 115 }; ch = '#'; }
+      else if (roadDist < 1.6 && pz > 0.0) { col = { r: 160, g: 130, b: 85 }; ch = '='; }
+      else { ch = dot > 0.5 ? '"' : (dot > 0.25 ? ',' : '.'); }
+
+      if (fireGlow > 0.1) {
+        col.r = Math.min(255, col.r + 60);
+        col.g = Math.max(0, col.g - 20);
+      }
+
+      return { hit: true, dist: t, color: { r: Math.floor(col.r * light), g: Math.floor(col.g * light), b: Math.floor(col.b * light) }, ch: ch };
+    }
+    t += step + t * 0.024;
+  }
+  return { hit: false };
+}
+
+function renderPixel(rx, ry, rz, ox, oy, oz, tNow, sunDir, fwd) {
+  let hitData = traceScene(ox, oy, oz, rx, ry, rz, 58.0, tNow, sunDir, fwd);
+  let waterY = 0.0;
+  if (oy > waterY && ry < -0.001) {
+    let tWater = (waterY - oy) / ry;
+    if (tWater > 0.0 && (!hitData.hit || tWater < hitData.dist)) {
+      let wx = ox + rx * tWater, wz = oz + rz * tWater;
+      if (Math.abs(wx - getRiverCenterX(wz)) < 5.8) return { color: { r: 35, g: 85, b: 120 }, ch: '~' };
+    }
+  }
+  if (hitData.hit) return { color: hitData.color, ch: hitData.ch };
+  return sampleSky(rx, ry, rz, tNow, sunDir);
+}
+
+// Bucle de logica
+function update(dt) {
+  if (!gameActive) return;
+
+  if (autoTime) timeOfDay = (timeOfDay + dt * 0.003) % 1.0;
+
+  // Consumo de bateria
+  if (flashlight && battery > 0) {
+    battery = Math.max(0, battery - dt * 2.8);
+    if (battery === 0) {
+      flashlight = false;
+      updateTorchHUD();
+      showHudMsg("¡LA LINTERNA SE APAGO!", '#ff4444');
+      beep(100, 0.2, 'sawtooth', 0.1);
     }
   }
 
-  return { color: rColor, b: Math.max(0, Math.min(1, brightness)), ch: customChar };
+  // Modificadores de velocidad
+  let wantsSprint = keys['shift'] && stamina > 2 && !isCrouched;
+  let baseSpeed = isCrouched ? 0.08 : (wantsSprint ? 0.28 : 0.15);
+
+  let moveF = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0) + joyVec.f;
+  let moveR = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0) + joyVec.r;
+  moveF = Math.max(-1, Math.min(1, moveF));
+  moveR = Math.max(-1, Math.min(1, moveR));
+  let moving = Math.abs(moveF) > 0.05 || Math.abs(moveR) > 0.05;
+
+  if (wantsSprint && moving) stamina = Math.max(0, stamina - dt * 24);
+  else stamina = Math.min(100, stamina + dt * 16);
+
+  if (moving && isGrounded && !isCrouched) {
+    footstepTimer -= dt;
+    if (footstepTimer <= 0) {
+      playFootstep();
+      footstepTimer = wantsSprint ? 0.22 : 0.38;
+    }
+  }
+
+  camX += Math.sin(yaw) * baseSpeed * moveF + Math.cos(yaw) * baseSpeed * moveR;
+  camZ += Math.cos(yaw) * baseSpeed * moveF - Math.sin(yaw) * baseSpeed * moveR;
+
+  let groundY = terrainHeight(camX, camZ);
+  let fortCheck = checkFortHit(camX, camY - 1.5, camZ);
+  if (fortCheck && fortCheck.isTowerTop) groundY = 8.5;
+  let eyeHeight = isCrouched ? 1.8 : 3.2;
+  let targetEyeY = Math.max(0.5, groundY) + eyeHeight;
+
+  if (keys[' '] && isGrounded && !isCrouched) { camVY = 0.21; isGrounded = false; }
+  camVY -= 0.015;
+  camY += camVY;
+  if (camY <= targetEyeY) { camY = targetEyeY; camVY = 0; isGrounded = true; }
+
+  // Recoger orbes
+  for (let o of orbs) {
+    if (o.collected) continue;
+    let dx = camX - o.x, dz = camZ - o.z, dy = (camY - 1.6) - o.baseY;
+    if (dx * dx + dz * dz < 2.0 && Math.abs(dy) < 2.2) {
+      o.collected = true;
+      orbsCollected++;
+      sanity = Math.min(100, sanity + 20);
+      playCollect();
+      showHudMsg(`ALMA PURIFICADA (${orbsCollected}/${ORBS_REQUIRED})`, '#8ee6ff');
+      if (orbsCollected === ORBS_REQUIRED) {
+        showHudMsg("¡CAMPANA DESBLOQUEADA!", '#ffe600');
+        beep(880, 0.4, 'triangle', 0.1);
+      }
+    }
+  }
+
+  // Recoger pilas
+  for (let b of batteries) {
+    if (b.collected) continue;
+    let dx = camX - b.x, dz = camZ - b.z;
+    if (dx * dx + dz * dz < 1.8) {
+      b.collected = true;
+      batteriesCollected++;
+      battery = Math.min(100, battery + 45);
+      playBatterySound();
+      showHudMsg("+45% BATERIA", '#ffd043');
+    }
+  }
+
+  // Checar si el jugador esta en zona segura (fogata)
+  let inSafeZone = false;
+  for (let c of campfires) {
+    if (Math.hypot(camX - c.x, camZ - c.z) < c.r) {
+      inSafeZone = true; break;
+    }
+  }
+  let safeEl = document.getElementById('stat-safe');
+  safeEl.innerText = inSafeZone ? 'ZONA: REFUGIO SEGURO' : 'ZONA: VULNERABLE';
+  safeEl.style.color = inSafeZone ? '#7fd88a' : '#aaa';
+
+  if (inSafeZone) sanity = Math.min(100, sanity + dt * 12);
+
+  // IA y amenaza del enemigo
+  let edx = camX - enemy.x, edz = camZ - enemy.z;
+  let eDist = Math.hypot(edx, edz);
+  enemy.dist = eDist;
+  enemy.y = terrainHeight(enemy.x, enemy.z);
+
+  // Rango de deteccion segun sigilo y linterna
+  let detectRadius = 38.0;
+  if (isCrouched) detectRadius = 14.0;
+  if (flashlight && battery > 0) detectRadius += 15.0;
+
+  let currentSpeed = enemy.speed + (orbsCollected * 0.007);
+
+  if (eDist < detectRadius && !inSafeZone) {
+    enemy.state = 'hunting';
+    enemy.x += (edx / eDist) * currentSpeed;
+    enemy.z += (edz / eDist) * currentSpeed;
+  } else if (inSafeZone && eDist < 7.0) {
+    // La sombra retrocede si estas junto a la fogata
+    enemy.x -= (edx / eDist) * currentSpeed * 0.8;
+    enemy.z -= (edz / eDist) * currentSpeed * 0.8;
+  }
+
+  // Perdida de cordura si la bestia esta cerca
+  if (eDist < 26.0 && !inSafeZone) {
+    sanity = Math.max(0, sanity - dt * (28.0 - eDist) * 0.8);
+    setStaticVol((26.0 - eDist) / 26.0 * 0.18);
+  } else {
+    setStaticVol(0);
+  }
+
+  // Latidos de corazon segun proximidad
+  let nowSec = performance.now() * 0.001;
+  if (eDist < 25.0 && nowSec > nextHeartbeat) {
+    nextHeartbeat = nowSec + Math.max(0.2, (eDist / 25.0) * 0.85);
+    beep(55, 0.08, 'triangle', 0.14);
+    setTimeout(() => beep(48, 0.08, 'triangle', 0.1), 100);
+  }
+
+  // Daño fisico
+  if (eDist < 2.2 && !inSafeZone) {
+    playerHP -= dt * 35;
+    let df = document.getElementById('damage-flash');
+    df.style.opacity = '0.75';
+    setTimeout(() => { df.style.opacity = '0'; }, 70);
+    beep(70, 0.06, 'sawtooth', 0.12);
+  }
+
+  // Muerte por vida o locura
+  if (playerHP <= 0 || sanity <= 0) {
+    gameActive = false;
+    setStaticVol(0);
+    document.getElementById('death-title').innerText = sanity <= 0 ? 'PERDISTE LA CORDURA' : 'HAS MUERTO';
+    document.getElementById('death-reason').innerText = sanity <= 0 ? 'Tu mente colapso en la oscuridad.' : 'La bestia devoro tus restos.';
+    document.getElementById('gameover-screen').style.display = 'flex';
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+
+  // HUD
+  document.getElementById('hp-bar').style.width = Math.max(0, playerHP).toFixed(0) + '%';
+  document.getElementById('sanity-bar').style.width = Math.max(0, sanity).toFixed(0) + '%';
+  document.getElementById('stamina-bar').style.width = stamina.toFixed(0) + '%';
+  document.getElementById('battery-bar').style.width = battery.toFixed(0) + '%';
+  document.getElementById('stat-orbs').innerText = orbsCollected + '/' + ORBS_REQUIRED;
+  document.getElementById('stat-batts').innerText = batteriesCollected;
+
+  let threatEl = document.getElementById('stat-threat');
+  if (enemy.state === 'hunting') {
+    threatEl.innerText = eDist < 12 ? 'AMENAZA: PERSECUCION' : 'AMENAZA: DETECTADO';
+    threatEl.style.color = '#ff3333';
+  } else {
+    threatEl.innerText = 'AMENAZA: EN BUSCA';
+    threatEl.style.color = '#7fd88a';
+  }
+
+  let dBell = Math.hypot(camX - bellPos.x, camZ - bellPos.z);
+  document.getElementById('stat-target').innerText = `CAMPANA: ${Math.round(dBell)}m`;
+
+  let angleToBell = Math.atan2(bellPos.x - camX, bellPos.z - camZ) - yaw;
+  let deg = ((angleToBell * 180 / Math.PI) % 360 + 360) % 360;
+  let dirStr = '↑ FRENTE';
+  if (deg > 45 && deg < 135) dirStr = '→ DERECHA';
+  else if (deg >= 135 && deg <= 225) dirStr = '↓ ATRAS';
+  else if (deg > 225 && deg < 315) dirStr = '← IZQUIERDA';
+  document.getElementById('stat-compass').innerText = dirStr;
+
+  drawMinimap();
 }
 
-function update() {
-  let speed = 0.16;
-  let dx = Math.sin(yaw) * speed;
-  let dz = Math.cos(yaw) * speed;
+// Minimapa
+let mctx = document.getElementById('minimap').getContext('2d');
+function drawMinimap() {
+  let W = 90, H = 90, scale = 0.42;
+  mctx.clearRect(0, 0, W, H);
+  mctx.fillStyle = 'rgba(10,20,15,0.7)';
+  mctx.fillRect(0, 0, W, H);
+  function toMap(x, z) { return { mx: W / 2 + (x - camX) * scale, my: H / 2 + (z - camZ) * scale }; }
 
-  if (keys['w']) { camX += dx; camZ += dz; }
-  if (keys['s']) { camX -= dx; camZ -= dz; }
-  if (keys['a']) { camX -= dz; camZ += dx; }
-  if (keys['d']) { camX += dz; camZ -= dx; }
-  if (keys['arrowleft']) yaw -= 0.04;
-  if (keys['arrowright']) yaw += 0.04;
-  if (keys['arrowup']) pitch = Math.min(1.4, pitch + 0.03);
-  if (keys['arrowdown']) pitch = Math.max(-1.4, pitch - 0.03);
+  // Rio
+  mctx.strokeStyle = '#3f7fb0';
+  mctx.beginPath();
+  for (let z = camZ - 45; z <= camZ + 45; z += 5) {
+    let p = toMap(getRiverCenterX(z), z);
+    if (z === camZ - 45) mctx.moveTo(p.mx, p.my); else mctx.lineTo(p.mx, p.my);
+  }
+  mctx.lineWidth = 2.5; mctx.stroke();
 
-  let floorY = terrainHeight(camX, camZ);
-  let targetY = Math.max(0.5, floorY) + 2.0;
-  camY += (targetY - camY) * 0.12;
+  // Castillo
+  let fp = toMap(0, 20);
+  mctx.fillStyle = '#888';
+  mctx.fillRect(fp.mx - 4, fp.my - 4, 8, 8);
 
-  updateMobs();
+  // Campana
+  let bp = toMap(bellPos.x, bellPos.z);
+  mctx.fillStyle = orbsCollected >= ORBS_REQUIRED ? '#ffe600' : '#885555';
+  mctx.beginPath(); mctx.arc(bp.mx, bp.my, 2.5, 0, 6.28); mctx.fill();
+
+  // Fogatas
+  mctx.fillStyle = '#ff7733';
+  for (let c of campfires) {
+    let cp = toMap(c.x, c.z);
+    mctx.beginPath(); mctx.arc(cp.mx, cp.my, 2, 0, 6.28); mctx.fill();
+  }
+
+  // Orbes
+  mctx.fillStyle = '#8ee6ff';
+  for (let o of orbs) {
+    if (o.collected) continue;
+    let p = toMap(o.x, o.z);
+    if (p.mx >= 0 && p.mx <= W && p.my >= 0 && p.my <= H) mctx.fillRect(p.mx - 1.5, p.my - 1.5, 3, 3);
+  }
+
+  // Pilas
+  mctx.fillStyle = '#ffd043';
+  for (let b of batteries) {
+    if (b.collected) continue;
+    let p = toMap(b.x, b.z);
+    if (p.mx >= 0 && p.mx <= W && p.my >= 0 && p.my <= H) mctx.fillRect(p.mx - 1.5, p.my - 1.5, 3, 3);
+  }
+
+  // Enemigo
+  if (enemy.dist < 35.0) {
+    let ep = toMap(enemy.x, enemy.z);
+    mctx.fillStyle = (performance.now() % 350 > 175) ? '#ff2222' : '#aa0000';
+    mctx.fillRect(ep.mx - 2.5, ep.my - 2.5, 5, 5);
+  }
+
+  // Jugador
+  mctx.fillStyle = '#ffffff';
+  mctx.beginPath(); mctx.arc(W / 2, H / 2, 3, 0, 6.28); mctx.fill();
+  mctx.strokeStyle = '#ffffff';
+  mctx.beginPath(); mctx.moveTo(W / 2, H / 2);
+  mctx.lineTo(W / 2 + Math.sin(yaw) * 9, H / 2 + Math.cos(yaw) * 9);
+  mctx.lineWidth = 1.5; mctx.stroke();
 }
 
+// Render loop
+let lastTime = performance.now(), frameCount = 0, fpsTimer = 0;
 function render(tNow) {
-  ctx.fillStyle = '#020408';
+  let dt = (tNow - lastTime) * 0.001;
+  lastTime = tNow;
+
+  frameCount++;
+  fpsTimer += dt;
+  if (fpsTimer >= 0.5) {
+    document.getElementById('stat-fps').innerText = 'FPS: ' + Math.round(frameCount / fpsTimer);
+    document.getElementById('stat-pos').innerText = `POS: ${camX.toFixed(1)} ${camY.toFixed(1)} ${camZ.toFixed(1)}`;
+    let hrs = Math.floor((timeOfDay * 24 + 6) % 24);
+    let mins = Math.floor((tNow * 0.01) % 60);
+    document.getElementById('stat-time').innerText = `HORA: ${(hrs < 10 ? '0' : '') + hrs}:${(mins < 10 ? '0' : '') + mins}`;
+    frameCount = 0; fpsTimer = 0;
+  }
+
+  update(dt);
+
+  ctx.fillStyle = '#010204';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.font = '10px monospace';
+  ctx.font = `bold ${CHAR_H - 1}px monospace`;
   ctx.textBaseline = 'top';
+
+  let sunDir = getSunDirection(timeOfDay);
 
   let forwardX = Math.sin(yaw) * Math.cos(pitch);
   let forwardY = Math.sin(pitch);
   let forwardZ = Math.cos(yaw) * Math.cos(pitch);
 
-  let rightX = Math.cos(yaw);
-  let rightY = 0;
-  let rightZ = -Math.sin(yaw);
-
+  let rightX = Math.cos(yaw), rightY = 0, rightZ = -Math.sin(yaw);
   let upX = rightY * forwardZ - rightZ * forwardY;
   let upY = rightZ * forwardX - rightX * forwardZ;
   let upZ = rightX * forwardY - rightY * forwardX;
 
-  let fov = 1.0;
-  let rainShift = (tNow * 0.02) % ROWS;
+  let fov = 1.05;
+  let fwdObj = { x: forwardX, y: forwardY, z: forwardZ };
+  let rainShift = (tNow * 0.035) % ROWS;
+
+  // Distorsion por locura y proximidad
+  let insanityGlitch = (100 - sanity) * 0.0012 + (enemy.dist < 8.0 ? (8.0 - enemy.dist) * 0.04 : 0);
 
   for (let y = 0; y < ROWS; y++) {
-    let py = (y / ROWS - 0.5) * 2;
+    let py = (y / ROWS - 0.5) * 2.0;
     for (let x = 0; x < COLS; x++) {
-      let isRainStreak = false;
-      if (isRaining) {
-        let rxHash = (x * 37 + 13) % 43;
-        let ryHash = Math.floor((y + rainShift) % ROWS);
-        if (rxHash === 7 && ryHash % 6 === 0) {
-          isRainStreak = true;
-        }
-      }
 
-      if (isRainStreak) {
-        ctx.fillStyle = 'rgba(160, 200, 255, 0.7)';
+      if (isRaining && (x * 41 + 17) % 53 === 7 && Math.floor((y + rainShift) % ROWS) % 5 === 0) {
+        ctx.fillStyle = 'rgba(160, 205, 255, 0.75)';
         ctx.fillText('|', x * CHAR_W, y * CHAR_H);
         continue;
       }
 
-      let px = (x / COLS - 0.5) * 2 * (COLS / ROWS) * 0.55;
-
+      let px = (x / COLS - 0.5) * 2.0 * (COLS / ROWS) * 0.58;
       let rx = forwardX * fov + rightX * px - upX * py;
       let ry = forwardY * fov + rightY * px - upY * py;
       let rz = forwardZ * fov + rightZ * px - upZ * py;
       let len = Math.hypot(rx, ry, rz);
       rx /= len; ry /= len; rz /= len;
 
-      let res = getSceneColor(rx, ry, rz, camX, camY, camZ, tNow);
-      let ch = res.ch;
-      if (!ch) {
-        let charIdx = Math.floor(res.b * (RAMP.length - 1));
-        ch = RAMP[charIdx] || ' ';
-      }
+      let res = renderPixel(rx, ry, rz, camX, camY, camZ, tNow, sunDir, fwdObj);
 
-      ctx.fillStyle = `rgb(${res.color.r}, ${res.color.g}, ${res.color.b})`;
-      ctx.fillText(ch, x * CHAR_W, y * CHAR_H);
+      if (res.ch && res.ch !== ' ') {
+        if (insanityGlitch > 0 && Math.random() < insanityGlitch) {
+          ctx.fillStyle = (Math.random() > 0.5) ? '#ff3333' : '#a855f7';
+          ctx.fillText(String.fromCharCode(33 + Math.floor(Math.random() * 55)), x * CHAR_W, y * CHAR_H);
+        } else {
+          ctx.fillStyle = `rgb(${res.color.r},${res.color.g},${res.color.b})`;
+          ctx.fillText(res.ch, x * CHAR_W, y * CHAR_H);
+        }
+      }
     }
   }
-}
 
-function loop(time) {
-  update();
-  render(time || 0);
-  requestAnimationFrame(loop);
+  requestAnimationFrame(render);
 }
-loop(0);
+requestAnimationFrame(render);
 </script>
 </body>
 </html>
